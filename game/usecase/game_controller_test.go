@@ -9,7 +9,7 @@ import (
 
 	"github.com/izgib/tttserver/game"
 	"github.com/izgib/tttserver/game/models"
-	"github.com/izgib/tttserver/logger"
+	"github.com/izgib/tttserver/internal"
 )
 
 var wg sync.WaitGroup
@@ -28,18 +28,18 @@ func Test_GameControler(t *testing.T) {
 
 		go controller.Start()
 
-		crLogger := logger.CreateDebugLogger().With().Str("player", models.EnumNamesMoveChoice[models.MoveChoice(controller.GetCreatorMark())]).Logger()
+		crLogger := internal.CreateDebugLogger().With().Str("player", models.EnumNamesMoveChoice[models.MoveChoice(controller.GetCreatorMark())]).Logger()
 		crLogger.Debug().Msg("start")
-		oppLogger := logger.CreateDebugLogger().With().Str("player", models.EnumNamesMoveChoice[models.MoveChoice(controller.GetOpponentMark())]).Logger()
+		oppLogger := internal.CreateDebugLogger().With().Str("player", models.EnumNamesMoveChoice[models.MoveChoice(controller.GetOpponentMark())]).Logger()
 		oppLogger.Debug().Msg("start")
 		wg.Add(2)
-		go Player(controller, controller.GetCreatorComChannels(), crLogger, moves)
-		go Player(controller, controller.GetOpponentComChannels(), oppLogger, moves)
+		go Player(controller.GetCreatorComChannels(), crLogger, moves)
+		go Player(controller.GetOpponentComChannels(), oppLogger, moves)
 		wg.Wait()
 	})
 }
 
-func Player(controller game.GameController, chans game.PlayerComm, logger zerolog.Logger, moves []models.Move) {
+func Player(chans game.PlayerComm, logger zerolog.Logger, moves []models.Move) {
 	turn := 0
 playerLoop:
 	for {

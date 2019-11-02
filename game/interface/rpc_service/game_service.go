@@ -12,7 +12,6 @@ import (
 	"github.com/izgib/tttserver/game/models"
 )
 
-//
 type GameService struct {
 	lobbiesController game.GameLobbyUsecase
 	logger            *zerolog.Logger
@@ -132,7 +131,6 @@ func (s *GameService) CreateGame(stream i9e.GameConfigurator_CreateGameServer) e
 				return statusError
 			}
 
-			go lobby.OnStart()
 			lobby.CreatorReadyChan() <- true
 
 			i9e.GameIdStart(b)
@@ -154,18 +152,21 @@ func (s *GameService) CreateGame(stream i9e.GameConfigurator_CreateGameServer) e
 	gameLogger := models.CreateGameDebugLogger(lobby.GetID()).With().Str("player", models.EnumNamesMoveChoice[models.MoveChoice(lobby.GetCreatorMark())]).Logger()
 	gameLogger.Debug().Msg("initialized")
 
+	var Chans game.PlayerComm
 	select {
 	case gs := <-lobby.GameStartedChan():
 		if gs {
+			Chans = lobby.GetGameController().GetCreatorComChannels()
 			i9e.GameEventStart(b)
 			i9e.GameEventAddType(b, i9e.GameEventTypeGameStarted)
 			CrWrapResponse(b, i9e.CreatorRespMsgGameEvent, i9e.GameEventEnd(b))
 
 			if err := stream.Send(b); err != nil {
+				gameLogger.Error().Err(err).Msg("disconnected after creation")
+				Chans.ErrChan <- err
 				return err
 			}
 			gameLogger.Debug().Msg("event started have sent")
-			// TODO add error handling after game creation
 		} else {
 			return nil
 		}
@@ -174,8 +175,6 @@ func (s *GameService) CreateGame(stream i9e.GameConfigurator_CreateGameServer) e
 		return stream.Context().Err()
 	}
 	gameLogger.Debug().Msg("started")
-
-	Chans := lobby.GetGameController().GetCreatorComChannels()
 
 L:
 	for {
@@ -211,7 +210,7 @@ L:
 					gameLogger.Debug().Dict("move", zerolog.Dict().
 						Int16("i", playerMove.I).
 						Int16("j", playerMove.J),
-					).Err(err).Msgf("lwas attempt to send move, but got error")
+					).Err(err).Msgf("was attempt to send move, but got error")
 					return err
 				}
 			}
@@ -246,6 +245,7 @@ L:
 			}
 
 			if state.StateType != models.Running {
+				gameLogger.Debug().Msg("ended")
 				break L
 			}
 		case game.InterruptCh:
@@ -258,6 +258,7 @@ L:
 			default:
 				createEvent(b, i9e.GameEventTypeOppDisconnected)
 			}
+			gameLogger.Debug().Msg("interrupted")
 			CrWrapResponse(b, i9e.CreatorRespMsgGameEvent, i9e.GameEventEnd(b))
 			return stream.Send(b)
 		}
@@ -322,13 +323,12 @@ func (s *GameService) JoinGame(stream i9e.GameConfigurator_JoinGameServer) error
 	Chans = lobby.GetGameController().GetOpponentComChannels()
 L:
 	for {
-		gameLogger.Debug().Msg("listen")
 		switch <-Chans.TypeChan {
 		case game.MoveCh:
 			if <-Chans.MoveRequesterChan {
 				in, err = stream.Recv()
 				if err != nil {
-					gameLogger.Err(err)
+					gameLogger.Err(err).Msg("can not receive move")
 					Chans.ErrChan <- err
 					return err
 				}
@@ -356,7 +356,7 @@ L:
 					gameLogger.Debug().Dict("move", zerolog.Dict().
 						Int16("i", playerMove.I).
 						Int16("j", playerMove.J),
-					).Err(err).Msg("bwas attempt to send move, but got error")
+					).Err(err).Msg("was attempt to send move, but got error")
 					return err
 				}
 			}
@@ -390,6 +390,7 @@ L:
 			}
 
 			if state.StateType != models.Running {
+				gameLogger.Debug().Msg("ended")
 				break L
 			}
 		case game.InterruptCh:
@@ -402,6 +403,7 @@ L:
 			default:
 				createEvent(b, i9e.GameEventTypeOppDisconnected)
 			}
+			gameLogger.Debug().Msg("interrupted")
 			OppWrapResponse(b, i9e.OpponentRespMsgGameEvent, i9e.GameEventEnd(b))
 			return stream.Send(b)
 		}

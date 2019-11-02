@@ -96,6 +96,13 @@ func (g *gameLobbyUsecase) CreateLobby(config game.GameConfiguration) (game.Game
 	g.lobbies[gameRecorder.GetID()] = lobby
 	g.mu.Unlock()
 
+	go func() {
+		lobby.Start()
+		g.mu.Lock()
+		delete(g.lobbies, lobby.GetID())
+		g.mu.Unlock()
+	}()
+
 	return lobby, nil
 }
 
@@ -154,7 +161,7 @@ func (g *gameLobbyUsecase) ListLobbies(filter game.GameFilter) ([]game.GameConfi
 		return nil, err
 	}
 
-	games := []game.GameConfiguration{}
+	var games []game.GameConfiguration
 	for _, v := range g.lobbies {
 		if (rows.Start <= v.GetSettings().Rows && v.GetSettings().Rows <= rows.End) &&
 			(cols.Start <= v.GetSettings().Cols && v.GetSettings().Cols <= cols.End) &&

@@ -3,6 +3,7 @@ package usecase
 import (
 	"github.com/izgib/tttserver/game"
 	"github.com/izgib/tttserver/game/models"
+	"github.com/izgib/tttserver/internal"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -21,6 +22,7 @@ type gameController struct {
 	errChan       [2]chan error
 }
 
+//NewGameController create GameController
 func NewGameController(settings *models.GameSettings, creatorMark models.PlayerMark, recorder game.GameRecorder) game.GameController {
 	return &gameController{
 		settings:      settings,
@@ -36,15 +38,18 @@ func NewGameController(settings *models.GameSettings, creatorMark models.PlayerM
 	}
 }
 
-func (g gameController) GetOpponentMark() models.PlayerMark {
+//GetOpponentMark return opponent's mark
+func (g *gameController) GetOpponentMark() models.PlayerMark {
 	return (g.creatorMark + 1) & 1
 }
 
-func (g gameController) GetCreatorMark() models.PlayerMark {
+//GetCreatorMark return creator's mark
+func (g *gameController) GetCreatorMark() models.PlayerMark {
 	return g.creatorMark
 }
 
-func (g gameController) GetCreatorComChannels() game.PlayerComm {
+// GetCreatorComChannels return Creator's channels for communication with GameController
+func (g *gameController) GetCreatorComChannels() game.PlayerComm {
 	ind := g.creatorMark
 	return game.PlayerComm{
 		CommChan:          g.playerChan[ind],
@@ -56,7 +61,8 @@ func (g gameController) GetCreatorComChannels() game.PlayerComm {
 	}
 }
 
-func (g gameController) GetOpponentComChannels() game.PlayerComm {
+// GetOpponentComChannels return Opponent's channels for communication with GameController
+func (g *gameController) GetOpponentComChannels() game.PlayerComm {
 	ind := g.GetOpponentMark()
 	return game.PlayerComm{
 		CommChan:          g.playerChan[ind],
@@ -68,7 +74,7 @@ func (g gameController) GetOpponentComChannels() game.PlayerComm {
 	}
 }
 
-func (g gameController) requestMove(player int16) (move models.Move, err error) {
+func (g *gameController) requestMove(player int16) (move models.Move, err error) {
 	g.typeChan[player] <- game.MoveCh
 	g.moveRequester[player] <- true
 	select {
@@ -79,33 +85,32 @@ func (g gameController) requestMove(player int16) (move models.Move, err error) 
 	}
 }
 
-func (g gameController) sendMove(player int16, move models.Move) {
+func (g *gameController) sendMove(player int16, move models.Move) {
 	g.typeChan[player] <- game.MoveCh
 	g.moveRequester[player] <- false
 	g.playerChan[player] <- move
 }
 
-func (g gameController) sendState(player int16, state models.GameState) {
+func (g *gameController) sendState(player int16, state models.GameState) {
 	g.typeChan[player] <- game.StateCh
 	g.stateChan[player] <- state
 }
 
-func (g gameController) sendInterruption(player int16, cause game.Interruption) {
+func (g *gameController) sendInterruption(player int16, cause game.Interruption) {
 	g.typeChan[player] <- game.InterruptCh
 	g.interruptChan[player] <- cause
 }
 
-func (g gameController) Start() {
+// Start GameController
+func (g *gameController) Start() {
+	logger := internal.CreateDebugLogger()
 	curPlayer, nextPlayer := int16(models.Cross), int16(models.Nought)
 	for {
 		var move models.Move
 		var err error
 
 		if move, err = g.requestMove(curPlayer); err != nil {
-			s, ok := status.FromError(err)
-			if !ok {
-				panic(err)
-			}
+			s := status.Convert(err)
 			switch s.Code() {
 			case codes.Canceled:
 				g.sendInterruption(nextPlayer, game.Leave)
@@ -113,18 +118,18 @@ func (g gameController) Start() {
 				g.sendInterruption(nextPlayer, game.Disconnect)
 			}
 			if err = g.recorder.RecordStatus(enumDisconnectToStatus[models.PlayerMark(curPlayer)]); err != nil {
-				panic(err)
+				logger.Error().Err(err).Msg("db error: can not write status")
 			}
 			return
 		}
 
 		if err = g.recorder.RecordMove(move); err != nil {
-			panic(err)
+			logger.Error().Err(err).Msg("db error: can not write move")
 		}
 
 		if err = g.game.MoveTo(move); err != nil {
 			if err = g.recorder.RecordStatus(enumCheatingToStatus[models.PlayerMark(curPlayer)]); err != nil {
-				panic(err)
+				logger.Error().Err(err).Msg("db error: can not write status")
 			}
 			g.sendInterruption(curPlayer, game.InvalidMove)
 			g.sendInterruption(nextPlayer, game.OppInvalidMove)
@@ -134,10 +139,7 @@ func (g gameController) Start() {
 		state := g.game.GameState(move)
 		g.sendState(curPlayer, state)
 		if err = <-g.errChan[curPlayer]; err != nil {
-			s, ok := status.FromError(err)
-			if !ok {
-				panic(err)
-			}
+			s := status.Convert(err)
 			switch s.Code() {
 			case codes.Canceled:
 				g.sendInterruption(nextPlayer, game.Leave)
@@ -145,43 +147,37 @@ func (g gameController) Start() {
 				g.sendInterruption(nextPlayer, game.Disconnect)
 			}
 			if err = g.recorder.RecordStatus(enumDisconnectToStatus[models.PlayerMark(curPlayer)]); err != nil {
-				panic(err)
+				logger.Error().Err(err).Msg("db error: can not write status")
 			}
 			return
 		}
 
 		g.sendMove(nextPlayer, move)
 		if err = <-g.errChan[nextPlayer]; err != nil {
-			status, ok := status.FromError(err)
-			if !ok {
-				panic(err)
-			}
-			switch status.Code() {
+			s := status.Convert(err)
+			switch s.Code() {
 			case codes.Canceled:
 				g.sendInterruption(curPlayer, game.Leave)
 			default:
 				g.sendInterruption(curPlayer, game.Disconnect)
 			}
 			if err = g.recorder.RecordStatus(enumDisconnectToStatus[models.PlayerMark(nextPlayer)]); err != nil {
-				panic(err)
+				logger.Error().Err(err).Msg("db error: can not write status")
 			}
 			return
 		}
 
 		g.sendState(nextPlayer, state)
 		if err = <-g.errChan[nextPlayer]; err != nil {
-			status, ok := status.FromError(err)
-			if !ok {
-				panic(err)
-			}
-			switch status.Code() {
+			s := status.Convert(err)
+			switch s.Code() {
 			case codes.Canceled:
 				g.sendInterruption(curPlayer, game.Leave)
 			default:
 				g.sendInterruption(curPlayer, game.Disconnect)
 			}
 			if err = g.recorder.RecordStatus(enumDisconnectToStatus[models.PlayerMark(nextPlayer)]); err != nil {
-				panic(err)
+				logger.Error().Err(err).Msg("db error: can not write status")
 			}
 			return
 		}
@@ -191,15 +187,10 @@ func (g gameController) Start() {
 			case models.Tie:
 				err = g.recorder.RecordStatus(game.Tie)
 			case models.Won:
-				switch state.WinLine.Mark {
-				case models.CrossMark:
-					err = g.recorder.RecordStatus(game.XWon)
-				case models.NoughtMark:
-					err = g.recorder.RecordStatus(game.OWon)
-				}
+				err = g.recorder.RecordStatus(enumMarkToStatus[state.WinLine.Mark])
 			}
 			if err != nil {
-				panic(err)
+				logger.Error().Err(err).Msg("db error: can not write status")
 			}
 			return
 		}

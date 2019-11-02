@@ -21,12 +21,6 @@ func min(a, b int16) int16 {
 	}
 }
 
-func validSettings(settings models.GameSettings) bool {
-	return models.GameRules[models.Rows].Start <= settings.Rows && settings.Rows <= models.GameRules[models.Rows].End &&
-		models.GameRules[models.Cols].Start <= settings.Cols && settings.Cols <= models.GameRules[models.Cols].End &&
-		models.GameRules[models.Win].Start <= settings.Win && settings.Win <= min(settings.Rows, settings.Rows)
-}
-
 func Test_CreateLobby(t *testing.T) {
 	var wrongSettings = []struct {
 		name     string
@@ -91,7 +85,7 @@ func Test_CreateLobby(t *testing.T) {
 }
 
 func Test_gameLobbyUsecase_JoinLobby(t *testing.T) {
-	mockLobby := &GameLobby{
+	mockLobby := &gameLobby{
 		ID:          10,
 		Settings:    models.GameSettings{3, 3, 3},
 		CreatorMark: models.CrossMark,

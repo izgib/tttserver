@@ -15,7 +15,7 @@ import (
 	"github.com/izgib/tttserver/game/interface/rpc_service"
 	"github.com/izgib/tttserver/game/interface/rpc_service/i9e"
 	"github.com/izgib/tttserver/game/usecase"
-	log2 "github.com/izgib/tttserver/logger"
+	"github.com/izgib/tttserver/internal"
 )
 
 func main() {
@@ -32,7 +32,7 @@ func main() {
 		Time:              15 * time.Second,
 	}
 
-	log := log2.CreateDebugLogger()
+	log := internal.CreateDebugLogger()
 
 	addr := fmt.Sprintf("%s:%d", host, port)
 	l, err := net.Listen("tcp", addr)

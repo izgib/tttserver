@@ -15,5 +15,5 @@ type GameLobby interface {
 	GetGameController() GameController
 	IsGameStarted() bool
 	GetRecorder() GameRecorder
-	OnStart()
+	Start()
 }

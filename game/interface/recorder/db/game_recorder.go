@@ -63,10 +63,6 @@ func (r *gameRecorder) GetID() int16 {
 	return r.gameId
 }
 
-func (r *gameRecorder) DeleteGameRecord(ID int16) error {
-	return nil
-}
-
 func (r *gameRecorder) RecordMove(move models.Move) error {
 	mq := `UPDATE game SET moves = array_append(moves, CAST(ROW($1, $2) AS move)) WHERE game_id=$3`
 	_, err := r.db.Exec(mq, move.I, move.J, r.gameId)

@@ -3,7 +3,7 @@ package text
 import (
 	"github.com/izgib/tttserver/game"
 	"github.com/izgib/tttserver/game/models"
-	logger2 "github.com/izgib/tttserver/logger"
+	logger2 "github.com/izgib/tttserver/internal"
 	"github.com/rs/zerolog"
 )
 
@@ -36,11 +36,6 @@ func (r *gameRecorder) RecordStatus(status game.GameEndStatus) error {
 		cause = "Player O make invalid move"
 	}
 	r.logger.Debug().Str("cause", cause).Msg("ended")
-	return nil
-}
-
-func (r *gameRecorder) DeleteGameRecord(ID int16) error {
-	r.logger.Debug().Int16("game", r.gameId).Msg("deleted")
 	return nil
 }
 

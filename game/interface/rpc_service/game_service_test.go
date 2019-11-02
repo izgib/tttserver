@@ -24,7 +24,7 @@ import (
 	"github.com/izgib/tttserver/game/mocks"
 	"github.com/izgib/tttserver/game/models"
 	"github.com/izgib/tttserver/game/usecase"
-	"github.com/izgib/tttserver/logger"
+	"github.com/izgib/tttserver/internal"
 )
 
 const bufSize = 1024 * 16
@@ -76,7 +76,7 @@ func TestGameService(t *testing.T) {
 
 		service := NewGameService(
 			mockGameLobbyUsecase,
-			logger.CreateDebugLogger(),
+			internal.CreateDebugLogger(),
 		)
 		i9e.RegisterGameConfiguratorServer(s, service)
 
@@ -93,7 +93,7 @@ func TestGameService(t *testing.T) {
 				return l.Dial()
 			}),
 			grpc.WithInsecure(),
-			grpc.WithCodec(flatbuffers.FlatbuffersCodec{}),
+			grpc.WithDefaultCallOptions(grpc.CallCustomCodec(flatbuffers.FlatbuffersCodec{})),
 		)
 		if err != nil {
 			t.Fatalf("Failed to dial bufnet: %v", err)
@@ -103,7 +103,7 @@ func TestGameService(t *testing.T) {
 		moves := []models.Move{{1, 1}, {0, 2}, {2, 2}, {0, 0}, {0, 1}, {2, 1}, {1, 0}, {1, 2}, {2, 0}}
 
 		creator := i9e.NewGameConfiguratorClient(conn)
-		crLogger := logger.CreateDebugLogger().With().Str("player", models.EnumNamesMoveChoice[models.MoveChoice(lobby.mark)]).Logger()
+		crLogger := internal.CreateDebugLogger().With().Str("player", models.EnumNamesMoveChoice[models.MoveChoice(lobby.mark)]).Logger()
 		crContext := context.Background()
 		crStream, err := creator.CreateGame(crContext)
 		if err != nil {
@@ -124,7 +124,7 @@ func TestGameService(t *testing.T) {
 
 		opponent := i9e.NewGameConfiguratorClient(conn)
 		oppMark := (lobby.mark + 1) & 1
-		oppLogger := logger.CreateDebugLogger().With().Str("player", models.EnumNamesMoveChoice[models.MoveChoice(oppMark)]).Logger()
+		oppLogger := internal.CreateDebugLogger().With().Str("player", models.EnumNamesMoveChoice[models.MoveChoice(oppMark)]).Logger()
 		oppContext := context.Background()
 		oppStream, err := opponent.JoinGame(oppContext)
 		if err != nil {
@@ -162,7 +162,7 @@ func TestGameService(t *testing.T) {
 
 		service := NewGameService(
 			mockGameLobbyUsecase,
-			logger.CreateDebugLogger(),
+			internal.CreateDebugLogger(),
 		)
 		i9e.RegisterGameConfiguratorServer(s, service)
 
@@ -179,7 +179,7 @@ func TestGameService(t *testing.T) {
 				return l.Dial()
 			}),
 			grpc.WithInsecure(),
-			grpc.WithCodec(flatbuffers.FlatbuffersCodec{}),
+			grpc.WithDefaultCallOptions(grpc.CallCustomCodec(flatbuffers.FlatbuffersCodec{})),
 		)
 		if err != nil {
 			t.Fatalf("Failed to dial bufnet: %v", err)
@@ -189,7 +189,7 @@ func TestGameService(t *testing.T) {
 		moves := []models.Move{{1, 1}, {0, 2}, {2, 2}, {0, 0}, {0, 1}, {2, 1}, {1, 0}, {1, 2}, {2, 0}}
 
 		creator := i9e.NewGameConfiguratorClient(conn)
-		crLogger := logger.CreateDebugLogger().With().Str("player", models.EnumNamesMoveChoice[models.MoveChoice(lobby.mark)]).Logger()
+		crLogger := internal.CreateDebugLogger().With().Str("player", models.EnumNamesMoveChoice[models.MoveChoice(lobby.mark)]).Logger()
 		crContext, crStreamCancel := context.WithCancel(context.Background())
 		crStream, err := creator.CreateGame(crContext)
 		if err != nil {
@@ -211,7 +211,7 @@ func TestGameService(t *testing.T) {
 
 		opponent := i9e.NewGameConfiguratorClient(conn)
 		oppMark := (lobby.mark + 1) & 1
-		oppLogger := logger.CreateDebugLogger().With().Str("player", models.EnumNamesMoveChoice[models.MoveChoice(oppMark)]).Logger()
+		oppLogger := internal.CreateDebugLogger().With().Str("player", models.EnumNamesMoveChoice[models.MoveChoice(oppMark)]).Logger()
 		oppContext := context.Background()
 		oppStream, err := opponent.JoinGame(oppContext)
 		if err != nil {
@@ -249,7 +249,7 @@ func TestGameService(t *testing.T) {
 
 		service := NewGameService(
 			mockGameLobbyUsecase,
-			logger.CreateDebugLogger(),
+			internal.CreateDebugLogger(),
 		)
 		i9e.RegisterGameConfiguratorServer(s, service)
 
@@ -266,7 +266,7 @@ func TestGameService(t *testing.T) {
 				return l.Dial()
 			}),
 			grpc.WithInsecure(),
-			grpc.WithCodec(flatbuffers.FlatbuffersCodec{}),
+			grpc.WithDefaultCallOptions(grpc.CallCustomCodec(flatbuffers.FlatbuffersCodec{})),
 		)
 		if err != nil {
 			t.Fatalf("Failed to dial bufnet: %v", err)
@@ -276,7 +276,7 @@ func TestGameService(t *testing.T) {
 		moves := []models.Move{{1, 1}, {0, 2}, {2, 2}, {0, 0}, {0, 1}, {2, 1}, {1, 0}, {1, 2}, {2, 0}}
 
 		creator := i9e.NewGameConfiguratorClient(conn)
-		crLogger := logger.CreateDebugLogger().With().Str("player", models.EnumNamesMoveChoice[models.MoveChoice(lobby.mark)]).Logger()
+		crLogger := internal.CreateDebugLogger().With().Str("player", models.EnumNamesMoveChoice[models.MoveChoice(lobby.mark)]).Logger()
 		crContext := context.Background()
 		crStream, err := creator.CreateGame(crContext)
 		if err != nil {
@@ -299,7 +299,7 @@ func TestGameService(t *testing.T) {
 
 		opponent := i9e.NewGameConfiguratorClient(conn)
 		oppMark := (lobby.mark + 1) & 1
-		oppLogger := logger.CreateDebugLogger().With().Str("player", models.EnumNamesMoveChoice[models.MoveChoice(oppMark)]).Logger()
+		oppLogger := internal.CreateDebugLogger().With().Str("player", models.EnumNamesMoveChoice[models.MoveChoice(oppMark)]).Logger()
 		oppContext, oppStreamCancel := context.WithCancel(context.Background())
 		oppStream, err := opponent.JoinGame(oppContext)
 		if err != nil {
@@ -358,7 +358,7 @@ func gameCreatorInit(stream i9e.GameConfigurator_CreateGameClient, settings mode
 		if out.Resp(resp) {
 			gameStart.Init(resp.Bytes, resp.Pos)
 			if gameStart.Type() != i9e.GameEventTypeGameStarted {
-				err := fmt.Errorf("Expected Event Game Started, get %s", i9e.EnumNamesGameEventType[gameStart.Type()])
+				err := fmt.Errorf("expected Event Game Started, got %s", i9e.EnumNamesGameEventType[gameStart.Type()])
 				logger.Error().Err(err)
 				return err
 			}
@@ -390,7 +390,7 @@ func gameOpponentInit(stream i9e.GameConfigurator_JoinGameClient, ID int16, logg
 		if out.Resp(resp) {
 			gameStart.Init(resp.Bytes, resp.Pos)
 			if gameStart.Type() != i9e.GameEventTypeGameStarted {
-				err := fmt.Errorf("Expected Event Game Started, get %s", i9e.EnumNamesGameEventType[gameStart.Type()])
+				err := fmt.Errorf("expected Event Game Started, got %s", i9e.EnumNamesGameEventType[gameStart.Type()])
 				logger.Error().Err(err)
 				return err
 			}

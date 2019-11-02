@@ -4,7 +4,6 @@ import "github.com/izgib/tttserver/game/models"
 
 type GameRecorder interface {
 	GetID() int16
-	DeleteGameRecord(ID int16) error
 	RecordMove(move models.Move) error
 	RecordStatus(status GameEndStatus) error
 }
