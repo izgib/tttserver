@@ -171,6 +171,7 @@ func (s *GameService) CreateGame(stream i9e.GameConfigurator_CreateGameServer) e
 			return nil
 		}
 	case <-stream.Context().Done():
+		gameLogger.Debug().Msg("canceled")
 		lobby.CreatorReadyChan() <- false
 		return stream.Context().Err()
 	}
