@@ -3,28 +3,36 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/izgib/tttserver/game/interface/recorder/db"
+	"github.com/izgib/tttserver/lobby"
+	"github.com/izgib/tttserver/recorder/db"
 	_ "github.com/jackc/pgx/v4/stdlib"
 	"net"
+	"os"
 	"time"
 
 	"github.com/google/flatbuffers/go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
 
-	"github.com/izgib/tttserver/game/interface/rpc_service"
-	"github.com/izgib/tttserver/game/interface/rpc_service/i9e"
-	"github.com/izgib/tttserver/game/usecase"
 	"github.com/izgib/tttserver/internal"
+	"github.com/izgib/tttserver/rpc_service"
+	"github.com/izgib/tttserver/rpc_service/transport"
 )
 
 func main() {
 	var host string
 	var port int
+	var http2Debug bool
 
 	flag.StringVar(&host, "host", "0.0.0.0", "host to serve upon")
 	flag.IntVar(&port, "port", 8080, "port to serve upon")
+	flag.BoolVar(&http2Debug, "http2debug", false, "print http2 debug info")
 	flag.Parse()
+	if http2Debug {
+		os.Setenv("GRPC_GO_LOG_SEVERITY_LEVEL", "info")
+		os.Setenv("GRPC_GO_LOG_VERBOSITY_LEVEL", "2")
+		os.Setenv("GODEBUG", "http2debug=2")
+	}
 
 	keepalivePolicy := keepalive.EnforcementPolicy{MinTime: 10 * time.Second}
 	keepaliveParams := keepalive.ServerParameters{
@@ -49,13 +57,13 @@ func main() {
 	)
 
 	service := rpc_service.NewGameService(
-		usecase.NewGameLobbyUsecase(
+		lobby.NewGameLobbyController(
 			db.NewGameRecorder,
 			log,
 		),
 		log,
 	)
-	i9e.RegisterGameConfiguratorServer(s, service)
+	transport.RegisterGameConfiguratorServer(s, service)
 
 	log.Info().Msg("GameService started")
 
