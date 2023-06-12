@@ -7,7 +7,7 @@ import (
 
 type fields struct {
 	settings  GameSettings
-	turn      int16
+	turn      uint16
 	gameField [][]MoveChoice
 }
 
@@ -74,8 +74,8 @@ var otherFields = []fields{
 func TestGame_isWon(t *testing.T) {
 	type args struct {
 		mark MoveChoice
-		i    int16
-		j    int16
+		i    uint16
+		j    uint16
 	}
 	tests := []struct {
 		name   string
@@ -86,52 +86,52 @@ func TestGame_isWon(t *testing.T) {
 		{"IsEndedVertical1",
 			winFields[0],
 			args{Cross, 0, 0},
-			&WinLine{CrossMark, Move{0, 0}, Move{2, 0}},
+			&WinLine{CrossMark, &Move{0, 0}, &Move{2, 0}},
 		},
 		{"IsEndedVertical2",
 			winFields[0],
 			args{Cross, 1, 0},
-			&WinLine{CrossMark, Move{0, 0}, Move{2, 0}},
+			&WinLine{CrossMark, &Move{0, 0}, &Move{2, 0}},
 		},
 		{"IsEndedHorizontal1",
 			winFields[1],
 			args{Nought, 0, 0},
-			&WinLine{NoughtMark, Move{0, 0}, Move{0, 2}},
+			&WinLine{NoughtMark, &Move{0, 0}, &Move{0, 2}},
 		},
 		{"IsEndedHorizontal2",
 			winFields[1],
 			args{Nought, 0, 1},
-			&WinLine{NoughtMark, Move{0, 0}, Move{0, 2}},
+			&WinLine{NoughtMark, &Move{0, 0}, &Move{0, 2}},
 		},
 		{"IsEndedMainDiagonal1",
 			winFields[2],
 			args{Cross, 0, 0},
-			&WinLine{CrossMark, Move{0, 0}, Move{2, 2}},
+			&WinLine{CrossMark, &Move{0, 0}, &Move{2, 2}},
 		},
 		{"IsEndedMainDiagonal2",
 			winFields[2],
 			args{Cross, 1, 1},
-			&WinLine{CrossMark, Move{0, 0}, Move{2, 2}},
+			&WinLine{CrossMark, &Move{0, 0}, &Move{2, 2}},
 		},
 		{"IsEndedAntiDiagonal1",
 			winFields[3],
 			args{Nought, 2, 0},
-			&WinLine{NoughtMark, Move{2, 0}, Move{0, 2}},
+			&WinLine{NoughtMark, &Move{2, 0}, &Move{0, 2}},
 		},
 		{"IsEndedAntiDiagonal2",
 			winFields[3],
 			args{Nought, 1, 1},
-			&WinLine{NoughtMark, Move{2, 0}, Move{0, 2}},
+			&WinLine{NoughtMark, &Move{2, 0}, &Move{0, 2}},
 		},
 		{"IsEndedRow",
 			winFields[4],
 			args{Cross, 2, 0},
-			&WinLine{CrossMark, Move{0, 0}, Move{2, 0}},
+			&WinLine{CrossMark, &Move{0, 0}, &Move{2, 0}},
 		},
 		{"IsEndedFull",
 			winFields[5],
 			args{Cross, 2, 2},
-			&WinLine{CrossMark, Move{0, 0}, Move{2, 2}},
+			&WinLine{CrossMark, &Move{0, 0}, &Move{2, 2}},
 		},
 	}
 	for _, tt := range tests {
@@ -167,7 +167,7 @@ func TestGame_GameState(t *testing.T) {
 			args{Move{0, 0}},
 			GameState{
 				StateType: Won,
-				WinLine:   &WinLine{CrossMark, Move{0, 0}, Move{2, 0}},
+				WinLine:   &WinLine{CrossMark, &Move{0, 0}, &Move{2, 0}},
 			},
 		},
 		{"IsWonFilledGameField",
@@ -175,7 +175,7 @@ func TestGame_GameState(t *testing.T) {
 			args{Move{2, 2}},
 			GameState{
 				StateType: Won,
-				WinLine:   &WinLine{CrossMark, Move{0, 0}, Move{2, 2}},
+				WinLine:   &WinLine{CrossMark, &Move{0, 0}, &Move{2, 2}},
 			},
 		},
 		{"IsTie",
@@ -221,7 +221,7 @@ func TestGame_GameExample(t *testing.T) {
 			[]Move{{1, 1}, {1, 2}, {0, 2}, {2, 0}, {0, 0}, {2, 2}, {0, 1}},
 			GameState{
 				StateType: Won,
-				WinLine:   &WinLine{CrossMark, Move{0, 0}, Move{0, 2}},
+				WinLine:   &WinLine{CrossMark, &Move{0, 0}, &Move{0, 2}},
 			},
 		},
 		{"IsNoughtWonVertical",
@@ -229,7 +229,7 @@ func TestGame_GameExample(t *testing.T) {
 			[]Move{{1, 1}, {0, 2}, {0, 0}, {2, 2}, {2, 0}, {1, 2}},
 			GameState{
 				StateType: Won,
-				WinLine:   &WinLine{NoughtMark, Move{0, 2}, Move{2, 2}},
+				WinLine:   &WinLine{NoughtMark, &Move{0, 2}, &Move{2, 2}},
 			},
 		},
 		{"IsTied",
@@ -259,4 +259,41 @@ func TestGame_GameExample(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGame_RestartTest(t *testing.T) {
+	t.Run("GameRestart after Tie", func(t *testing.T) {
+		moves := []Move{{1, 1}, {0, 2}, {0, 0}, {2, 2}, {1, 2}, {1, 0}, {2, 1}, {0, 1}, {2, 0}}
+		game := NewGame(GameSettings{Rows: 3, Cols: 3, Win: 3})
+		endState := GameState{StateType: Tie, WinLine: nil}
+		var state GameState
+		for _, move := range moves {
+			game.MoveTo(move)
+			state = game.GameState(move)
+			switch state.StateType {
+			case Running:
+				continue
+			default:
+				break
+			}
+		}
+		if !reflect.DeepEqual(state, endState) {
+			t.Errorf("GameState() = %v, endState %v", state, endState)
+		}
+		game.Restart()
+		t.Logf("after game restart")
+		for _, move := range moves {
+			game.MoveTo(move)
+			state = game.GameState(move)
+			switch state.StateType {
+			case Running:
+				continue
+			default:
+				break
+			}
+		}
+		if !reflect.DeepEqual(state, endState) {
+			t.Errorf("GameState() = %v, endState %v", state, endState)
+		}
+	})
 }

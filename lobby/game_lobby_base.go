@@ -1,18 +1,14 @@
-package base
-
-import (
-	"github.com/izgib/tttserver/game"
-)
+package lobby
 
 type GameLobbyID interface {
-	GetID() int16
+	ID() uint32
 }
 
-type GameLobby interface {
+/*type GameLobby interface {
 	GameLobbyID
-	GetSettings() game.GameSettings
-	GetCreatorMark() game.PlayerMark
-	GetOpponentMark() game.PlayerMark
+	Settings() game.GameSettings
+	CreatorMark() game.PlayerMark
+	OpponentMark() game.PlayerMark
 	GameStartedChan() chan bool
 	CreatorReadyChan() chan bool
 	OpponentReadyChan() chan bool
@@ -20,5 +16,5 @@ type GameLobby interface {
 	IsGameStarted() bool
 	GetRecorder() GameRecorder
 	//Start block execution until game is canceled or game controller end execution
-	Start() error
-}
+	Start(logger *zerolog.Logger) error
+}*/

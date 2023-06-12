@@ -1,77 +1,72 @@
 package lobby
 
 import (
-	"github.com/izgib/tttserver/base"
-	"github.com/izgib/tttserver/controller"
 	"github.com/izgib/tttserver/game"
+	"github.com/rs/zerolog"
 )
 
-type gameLobby struct {
-	ID             int16
-	Settings       game.GameSettings
-	CreatorMark    game.PlayerMark
-	CrReady        chan bool
-	OppReady       chan bool
+type GameLobby struct {
+	ID             uint32
+	settings       game.GameSettings
+	creatorMark    game.PlayerMark
+	crReady        chan bool
+	oppReady       chan bool
 	startedChans   [2]chan bool
-	gameController *base.GameController
+	gameController *GameController
 	startedChan    int
-	recorder       base.GameRecorder
+	recorder       GameRecorder
 }
 
-func (g *gameLobby) GetRecorder() base.GameRecorder {
+func (g GameLobby) GetRecorder() GameRecorder {
 	return g.recorder
 }
 
-func (g *gameLobby) GetID() int16 {
-	return g.ID
+func (g GameLobby) Settings() game.GameSettings {
+	return g.settings
 }
 
-func (g *gameLobby) GetSettings() game.GameSettings {
-	return g.Settings
+func (g GameLobby) CreatorMark() game.PlayerMark {
+	return g.creatorMark
 }
 
-func (g *gameLobby) GetCreatorMark() game.PlayerMark {
-	return g.CreatorMark
+func (g GameLobby) OpponentMark() game.PlayerMark {
+	return (g.creatorMark + 1) & 1
 }
 
-func (g *gameLobby) GetOpponentMark() game.PlayerMark {
-	return (g.CreatorMark + 1) & 1
-}
-
-func (g *gameLobby) GetGameController() base.GameController {
+func (g GameLobby) GetGameController() GameController {
 	return *g.gameController
 }
 
-func NewGameLobby(ID int16, settings game.GameSettings, creatorMark game.PlayerMark, recorder base.GameRecorder) base.GameLobby {
-	return &gameLobby{ID: ID, Settings: settings, CreatorMark: creatorMark, CrReady: make(chan bool), recorder: recorder,
-		OppReady: make(chan bool), startedChan: 0, startedChans: [2]chan bool{make(chan bool), make(chan bool)},
+func NewGameLobby(ID uint32, settings game.GameSettings, creatorMark game.PlayerMark, recorder GameRecorder) GameLobby {
+	return GameLobby{ID: ID, settings: settings, creatorMark: creatorMark, crReady: make(chan bool), recorder: recorder,
+		oppReady: make(chan bool), startedChan: 0, startedChans: [2]chan bool{make(chan bool), make(chan bool)},
 	}
 }
 
-//Start block execution until game is canceled or game controller end execution
-func (g *gameLobby) Start() (err error) {
+// Start block execution until game is canceled or game controller end execution
+func (g *GameLobby) Start(logger *zerolog.Logger) (err error) {
 	started := g.IsGameStarted()
 	if started {
-		gameController := controller.NewGameController(&g.Settings, g.CreatorMark, g.recorder)
+		gameController := NewGameController(g.settings, g.creatorMark, g.recorder)
 		g.gameController = &gameController
 		fanOutVal(started, g.startedChans)
-		return gameController.Start()
+		return gameController.Start(logger)
 	} else {
 		fanOutVal(started, g.startedChans)
 	}
 	return nil
 }
 
-func (g *gameLobby) IsGameStarted() bool {
+func (g *GameLobby) IsGameStarted() bool {
 	var crReady bool
 	var oppReady bool
 	for {
 		select {
-		case crReady = <-g.CrReady:
+		case crReady = <-g.crReady:
 			if crReady == false {
 				return false
 			}
-		case oppReady = <-g.OppReady:
+		case oppReady = <-g.oppReady:
 		}
 		if crReady && oppReady {
 			break
@@ -80,17 +75,17 @@ func (g *gameLobby) IsGameStarted() bool {
 	return true
 }
 
-func (g *gameLobby) GameStartedChan() chan bool {
+func (g *GameLobby) GameStartedChan() chan bool {
 	defer func() { g.startedChan++ }()
 	return g.startedChans[g.startedChan]
 }
 
-func (g *gameLobby) CreatorReadyChan() chan bool {
-	return g.CrReady
+func (g *GameLobby) CreatorReadyChan() chan bool {
+	return g.crReady
 }
 
-func (g *gameLobby) OpponentReadyChan() chan bool {
-	return g.OppReady
+func (g *GameLobby) OpponentReadyChan() chan bool {
+	return g.oppReady
 }
 
 func fanOutVal(val bool, slaves [2]chan bool) {

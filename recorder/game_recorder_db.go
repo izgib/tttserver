@@ -1,9 +1,11 @@
-package db
+package recorder
 
 import (
 	"fmt"
-	"github.com/izgib/tttserver/base"
 	"github.com/izgib/tttserver/game"
+	"github.com/izgib/tttserver/internal/logger"
+	"github.com/izgib/tttserver/lobby"
+
 	_ "github.com/jackc/pgx/v4/stdlib"
 	"github.com/jmoiron/sqlx"
 )
@@ -22,9 +24,11 @@ const (
 	OWon          gameStatus = "o_won"
 	Tie           gameStatus = "tie"
 	XDisconnected gameStatus = "x_disconnected"
+	XIllegalMove  gameStatus = "x_illegal_move"
+	XLeft         gameStatus = "x_left"
 	ODisconnected gameStatus = "o_disconnected"
-	XCheated      gameStatus = "x_cheated"
-	OCheated      gameStatus = "o_cheated"
+	OIllegalMove  gameStatus = "o_illegal_move"
+	OLeft         gameStatus = "o_left"
 )
 
 type creatorMark string
@@ -44,46 +48,49 @@ var EnumValuesPlayerMark = map[game.PlayerMark]creatorMark{
 	game.NoughtMark: Nought,
 }
 
-var EnumValuesGameStatus = map[base.GameEndStatus]gameStatus{
-	base.Tie:           Tie,
-	base.XWon:          XWon,
-	base.OWon:          OWon,
-	base.XDisconnected: XDisconnected,
-	base.ODisconnected: ODisconnected,
-	base.XCheated:      XCheated,
-	base.OCheated:      OCheated,
+var EnumValuesGameStatus = map[lobby.GameEndStatus]gameStatus{
+	lobby.Tie:           Tie,
+	lobby.XWon:          XWon,
+	lobby.OWon:          OWon,
+	lobby.XDisconnected: XDisconnected,
+	lobby.ODisconnected: ODisconnected,
+	lobby.XIllegalMove:  XIllegalMove,
+	lobby.OIllegalMove:  OIllegalMove,
+	lobby.XLeft:         XLeft,
+	lobby.OLeft:         OLeft,
 }
 
 type gameRecorder struct {
 	db     *sqlx.DB
-	gameId int16
+	gameId uint32
 }
 
-func (r *gameRecorder) GetID() int16 {
+func (r *gameRecorder) ID() uint32 {
 	return r.gameId
 }
 
 func (r *gameRecorder) RecordMove(move game.Move) error {
-	mq := `UPDATE game SET moves = array_append(moves, CAST(ROW($1, $2) AS move)) WHERE game_id=$3`
+	mq := `UPDATE game_session SET moves = array_append(moves, CAST(ROW($1, $2) AS move)) WHERE game_id=$3`
 	_, err := r.db.Exec(mq, move.I, move.J, r.gameId)
 	return err
 }
 
-func (r *gameRecorder) RecordStatus(status base.GameEndStatus) error {
-	sq := `UPDATE game SET status=$1 WHERE game_id = $2`
+func (r *gameRecorder) RecordStatus(status lobby.GameEndStatus) error {
+	sq := `UPDATE game_session SET entities = array_append(entities, CAST (ROW(array_length(moves, 1) , $1) AS game_entity)) WHERE game_id = $2`
 	_, err := r.db.Exec(sq, EnumValuesGameStatus[status], r.gameId)
 	return err
 }
 
-func NewGameRecorder(config base.GameConfiguration) base.GameRecorder {
+func NewGameRecorder(config lobby.GameConfiguration) lobby.GameRecorder {
 	psqlInfo := fmt.Sprintf("host=%s database=%s user=%s password=%s sslmode=disable",
 		host, dbname, user, password)
 	db := sqlx.MustConnect("pgx", psqlInfo)
-	gq := `INSERT INTO game (rows, cols, win, creator_mark) VALUES ($1, $2, $3, $4) RETURNING game_id`
-	var gameID int16
+	gq := `INSERT INTO game_session (rows, cols, win, creator_mark) VALUES ($1, $2, $3, $4) RETURNING game_id`
+	var gameID uint32
 	err := db.QueryRowx(gq, config.Settings.Rows, config.Settings.Cols, config.Settings.Win, EnumValuesPlayerMark[config.Mark]).Scan(&gameID)
 	if err != nil {
-		panic(err)
+		logger.CreateDebugLogger().Err(err).Msg("can not create db entity")
+		return nil
 	}
 	return &gameRecorder{
 		gameId: gameID,

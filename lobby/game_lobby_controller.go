@@ -2,7 +2,6 @@ package lobby
 
 import (
 	"fmt"
-	"github.com/izgib/tttserver/base"
 	"strconv"
 	"sync"
 
@@ -11,22 +10,22 @@ import (
 	"github.com/izgib/tttserver/game"
 )
 
-type gameLobbyController struct {
+type GameLobbyController struct {
 	mu            sync.Locker
-	recordCreator func(config base.GameConfiguration) base.GameRecorder
-	lobbies       map[int16]base.GameLobby
+	recordCreator func(config GameConfiguration) GameRecorder
+	lobbies       map[uint32]*GameLobby
 	logger        *zerolog.Logger
 }
 
-func NewGameLobbyController(recordCreator func(config base.GameConfiguration) base.GameRecorder, logger *zerolog.Logger) base.GameLobbyController {
-	return &gameLobbyController{recordCreator: recordCreator, logger: logger, lobbies: make(map[int16]base.GameLobby), mu: &sync.Mutex{}}
+func NewGameLobbyController(recordCreator func(config GameConfiguration) GameRecorder, logger *zerolog.Logger) GameLobbyController {
+	return GameLobbyController{recordCreator: recordCreator, logger: logger, lobbies: make(map[uint32]*GameLobby), mu: &sync.Mutex{}}
 }
 
-func (g *gameLobbyController) CreateLobby(config base.GameConfiguration) (base.GameLobby, error) {
+func (g *GameLobbyController) CreateLobby(config GameConfiguration) (*GameLobby, error) {
 	g.logger.Debug().
-		Int16("Rows", config.Settings.Rows).
-		Int16("Cols", config.Settings.Cols).
-		Int16("Win", config.Settings.Win).
+		Uint16("Rows", config.Settings.Rows).
+		Uint16("Cols", config.Settings.Cols).
+		Uint16("Win", config.Settings.Win).
 		Str("Mark", game.EnumNamesMoveChoice[game.MoveChoice(config.Mark)]).
 		Msg("request to create lobby")
 	if config.Settings.Rows < game.GameRules[game.Rows].Start {
@@ -91,25 +90,26 @@ func (g *gameLobbyController) CreateLobby(config base.GameConfiguration) (base.G
 	}
 
 	gameRecorder := g.recordCreator(config)
-	lobby := NewGameLobby(gameRecorder.GetID(), config.Settings, config.Mark, gameRecorder)
+	lobby := NewGameLobby(gameRecorder.ID(), config.Settings, config.Mark, gameRecorder)
 	g.mu.Lock()
-	g.lobbies[gameRecorder.GetID()] = lobby
+	g.lobbies[lobby.ID] = &lobby
 	g.mu.Unlock()
 
 	go func() {
-		if err := lobby.Start(); err != nil {
-			logger := g.logger.With().Int16("game", lobby.GetID()).Logger()
-			(&logger).Info().Err(err).Msg("ended")
+		logger := g.logger.With().Uint32("session", lobby.ID).Logger()
+		logger.Debug().Msg("before start")
+		if err := lobby.Start(&logger); err != nil {
+			(&logger).Info().Int("player games", lobby.gameController.gameCount).Err(err).Msg("ended")
 		}
 		g.mu.Lock()
-		delete(g.lobbies, lobby.GetID())
+		delete(g.lobbies, lobby.ID)
 		g.mu.Unlock()
 	}()
 
-	return lobby, nil
+	return &lobby, nil
 }
 
-func (g *gameLobbyController) ListLobbies(filter base.GameFilter) ([]base.GameConfiguration, error) {
+func (g *GameLobbyController) ListLobbies(filter GameFilter) ([]GameConfiguration, error) {
 	var err error = nil
 	rows := filter.Rows
 	cols := filter.Cols
@@ -164,18 +164,18 @@ func (g *gameLobbyController) ListLobbies(filter base.GameFilter) ([]base.GameCo
 		return nil, err
 	}
 
-	var games []base.GameConfiguration
+	var games []GameConfiguration
 	for _, v := range g.lobbies {
-		if (rows.Start <= v.GetSettings().Rows && v.GetSettings().Rows <= rows.End) &&
-			(cols.Start <= v.GetSettings().Cols && v.GetSettings().Cols <= cols.End) &&
-			(win.Start <= v.GetSettings().Win && v.GetSettings().Win <= win.End) {
-			if mark == game.Empty || mark == game.MoveChoice(v.GetCreatorMark()) {
-				g.logger.Debug().Int16("game lobby", v.GetID())
+		if (rows.Start <= v.Settings().Rows && v.Settings().Rows <= rows.End) &&
+			(cols.Start <= v.Settings().Cols && v.Settings().Cols <= cols.End) &&
+			(win.Start <= v.Settings().Win && v.Settings().Win <= win.End) {
+			if mark == game.Empty || mark == game.MoveChoice(v.CreatorMark()) {
+				g.logger.Debug().Uint32("game lobby", v.ID)
 				games = append(games,
-					base.GameConfiguration{
-						ID:       v.GetID(),
-						Settings: v.GetSettings(),
-						Mark:     v.GetCreatorMark(),
+					GameConfiguration{
+						ID:       v.ID,
+						Settings: v.Settings(),
+						Mark:     v.CreatorMark(),
 					})
 			}
 		}
@@ -184,10 +184,10 @@ func (g *gameLobbyController) ListLobbies(filter base.GameFilter) ([]base.GameCo
 	return games, nil
 }
 
-func (g *gameLobbyController) JoinLobby(ID int16) (base.GameLobby, error) {
-	g.logger.Debug().Int16("game", ID).Msg("request to join lobby")
-	if game, ok := g.lobbies[ID]; ok {
-		return game, nil
+func (g *GameLobbyController) JoinLobby(ID uint32) (*GameLobby, error) {
+	g.logger.Debug().Uint32("game", ID).Msg("request to join lobby")
+	if gameLobby, ok := g.lobbies[ID]; ok {
+		return gameLobby, nil
 	} else {
 		errString := fmt.Sprintf("GameConfiguration %d was not found", ID)
 		err := NewGameLobbyError(errString)
@@ -196,9 +196,9 @@ func (g *gameLobbyController) JoinLobby(ID int16) (base.GameLobby, error) {
 	}
 }
 
-func (g *gameLobbyController) DeleteLobby(lobby base.GameLobby) {
+func (g *GameLobbyController) DeleteLobby(lobby GameLobby) {
 	g.mu.Lock()
-	delete(g.lobbies, lobby.GetID())
+	delete(g.lobbies, lobby.ID)
 	g.mu.Unlock()
 }
 
@@ -211,9 +211,9 @@ const (
 
 type GameCreationError struct {
 	parameter game.GameParameter
-	Bound     int16
+	Bound     uint16
 	errorType GameCreationErrorType
-	Value     int16
+	Value     uint16
 }
 
 func (e *GameCreationError) Error() string {
@@ -236,10 +236,10 @@ func (e *GameCreationError) Error() string {
 
 type ListFilterError struct {
 	parameter game.GameParameter
-	LowBound  int16
-	HighBound int16
-	StartVal  int16
-	EndVal    int16
+	LowBound  uint16
+	HighBound uint16
+	StartVal  uint16
+	EndVal    uint16
 }
 
 func (e *ListFilterError) Error() string {

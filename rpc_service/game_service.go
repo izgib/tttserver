@@ -1,9 +1,8 @@
 package rpc_service
 
 import (
-	"github.com/google/flatbuffers/go"
-	"github.com/izgib/tttserver/base"
 	"github.com/izgib/tttserver/game"
+	gLobby "github.com/izgib/tttserver/lobby"
 	"github.com/izgib/tttserver/rpc_service/transport"
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc/codes"
@@ -12,52 +11,56 @@ import (
 )
 
 type GameService struct {
-	lobbiesController base.GameLobbyController
+	lobbiesController gLobby.GameLobbyController
 	logger            *zerolog.Logger
+	transport.UnimplementedGameConfiguratorServer
 }
 
-var EnumPlayerMark = map[transport.MarkType]game.PlayerMark{
-	transport.MarkTypeCross:  game.CrossMark,
-	transport.MarkTypeNought: game.NoughtMark,
+var enumPlayerMark = map[transport.MarkType]game.PlayerMark{
+	transport.MarkType_MARK_TYPE_CROSS:  game.CrossMark,
+	transport.MarkType_MARK_TYPE_NOUGHT: game.NoughtMark,
+}
+
+var enumMoveChoise = map[transport.MarkType]game.MoveChoice{
+	transport.MarkType_MARK_TYPE_CROSS:       game.Cross,
+	transport.MarkType_MARK_TYPE_NOUGHT:      game.Nought,
+	transport.MarkType_MARK_TYPE_UNSPECIFIED: game.Empty,
+}
+
+var enumMarkType = map[game.PlayerMark]transport.MarkType{
+	game.CrossMark:  transport.MarkType_MARK_TYPE_CROSS,
+	game.NoughtMark: transport.MarkType_MARK_TYPE_NOUGHT,
 }
 
 // GetListOfGames returns list of Games
 func (s *GameService) GetListOfGames(params *transport.GameFilter, stream transport.GameConfigurator_GetListOfGamesServer) error {
-	b := flatbuffers.NewBuilder(0)
+	rowsStart := params.GetRows().Start
+	rowsEnd := params.GetRows().End
 
-	filterRange := &transport.Range{}
-	params.Rows(filterRange)
-	rowsStart := filterRange.Start()
-	rowsEnd := filterRange.End()
+	colsStart := params.GetCols().Start
+	colsEnd := params.GetCols().End
 
-	filterRange = &transport.Range{}
-	params.Cols(filterRange)
-	colsStart := filterRange.Start()
-	colsEnd := filterRange.End()
-
-	filterRange = &transport.Range{}
-	params.Win(filterRange)
-	winStart := filterRange.Start()
-	winEnd := filterRange.End()
+	winStart := params.GetWin().Start
+	winEnd := params.GetWin().End
 
 	s.logger.Debug().Dict("filter", zerolog.Dict().
 		Dict("row", zerolog.Dict().
-			Int16("start", rowsStart).
-			Int16("end", rowsEnd)).
+			Uint32("start", rowsStart).
+			Uint32("end", rowsEnd)).
 		Dict("col", zerolog.Dict().
-			Int16("start", colsStart).
-			Int16("end", colsEnd)).
+			Uint32("start", colsStart).
+			Uint32("end", colsEnd)).
 		Dict("win", zerolog.Dict().
-			Int16("start", winStart).
-			Int16("end", winEnd)).
-		Str("mark", transport.EnumNamesMarkTypeFilter[params.Mark()]),
+										Uint32("start", winStart).
+										Uint32("end", winEnd)).
+		Str("mark", transport.MarkType_name[int32(params.Mark)]), //transport.EnumNamesMarkTypeFilter[params.Mark()]),
 	).Msg("Request List of Games")
 
-	filter := base.GameFilter{
-		Rows: base.Filter{rowsStart, rowsEnd},
-		Cols: base.Filter{colsStart, colsEnd},
-		Win:  base.Filter{winStart, winEnd},
-		Mark: game.MoveChoice(params.Mark()),
+	filter := gLobby.GameFilter{
+		Rows: gLobby.Filter{Start: uint16(rowsStart), End: uint16(rowsEnd)},
+		Cols: gLobby.Filter{Start: uint16(colsStart), End: uint16(colsEnd)},
+		Win:  gLobby.Filter{Start: uint16(winStart), End: uint16(winEnd)},
+		Mark: enumMoveChoise[params.Mark],
 	}
 
 	games, err := s.lobbiesController.ListLobbies(filter)
@@ -67,27 +70,29 @@ func (s *GameService) GetListOfGames(params *transport.GameFilter, stream transp
 
 	i := 0
 	for _, v := range games {
-		s.logger.Debug().Int16("game", v.ID).Msgf("%d:", i)
-		transport.GameParamsStart(b)
-		transport.GameParamsAddRows(b, v.Settings.Rows)
-		transport.GameParamsAddCols(b, v.Settings.Cols)
-		transport.GameParamsAddWin(b, v.Settings.Win)
-		transport.GameParamsAddMark(b, transport.MarkType(v.Mark))
-		gcParams := transport.GameParamsEnd(b)
-		transport.ListItemStart(b)
-		transport.ListItemAddID(b, v.ID)
-		transport.ListItemAddParams(b, gcParams)
-		b.Finish(transport.ListItemEnd(b))
-		i++
-		if err = stream.Send(b); err != nil {
+		s.logger.Debug().Uint32("game", v.ID).Msgf("%d:", i)
+		params := transport.GameParams{
+			Rows: uint32(v.Settings.Rows),
+			Cols: uint32(v.Settings.Cols),
+			Win:  uint32(v.Settings.Win),
+			Mark: enumMarkType[v.Mark],
+		}
+
+		item := transport.ListItem{
+			Id:     v.ID,
+			Params: &params,
+		}
+
+		if err = stream.Send(&item); err != nil {
 			return err
 		}
+		i++
 	}
 
 	return nil
 }
 
-func NewGameService(gameController base.GameLobbyController, logger *zerolog.Logger) *GameService {
+func NewGameService(gameController gLobby.GameLobbyController, logger *zerolog.Logger) *GameService {
 	s := &GameService{
 		lobbiesController: gameController,
 		logger:            logger,
@@ -101,67 +106,71 @@ func (s *GameService) CreateGame(stream transport.GameConfigurator_CreateGameSer
 		return err
 	}
 
-	var lobby base.GameLobby
+	var lobby *gLobby.GameLobby
 
-	b := flatbuffers.NewBuilder(0)
-	req := &flatbuffers.Table{}
-	params := &transport.GameParams{}
-	if in.Req(req) {
-		if in.ReqType() == transport.CreatorReqMsgGameParams {
-			params.Init(req.Bytes, req.Pos)
-
-			s.logger.Debug().Int16("rows", params.Rows()).Int16("cols", params.Cols()).
-				Int16("win", params.Win()).Str("mark", transport.EnumNamesMarkType[params.Mark()]).
-				Msg("Request of creating game lobby")
-
-			gameConfig := base.GameConfiguration{
-				Settings: game.GameSettings{
-					Rows: params.Rows(),
-					Cols: params.Cols(),
-					Win:  params.Win(),
-				},
-				Mark: EnumPlayerMark[params.Mark()],
-			}
-
-			lobby, err = s.lobbiesController.CreateLobby(gameConfig)
-			if err != nil {
-				s.logger.Error().Err(err).Msg("got error")
-				statusError := status.Error(codes.OutOfRange, err.Error())
-				return statusError
-			}
-
-			lobby.CreatorReadyChan() <- true
-
-			transport.GameIdStart(b)
-			transport.GameIdAddID(b, lobby.GetID())
-			CrWrapResponse(b, transport.CreatorRespMsgGameId, transport.GameIdEnd(b))
-
-			if err := stream.Send(b); err != nil {
-				lobby.CreatorReadyChan() <- false
-				s.logger.Debug().Err(err)
-				return err
-			}
-		}
-	} else {
+	params, ok := in.Payload.(*transport.CreateRequest_Params)
+	if !ok {
 		err = status.Error(codes.InvalidArgument, "Expected to get GameParams")
 		s.logger.Err(err)
 		return err
 	}
+	rows := uint16(params.Params.Rows)
+	cols := uint16(params.Params.Cols)
+	win := uint16(params.Params.Win)
 
-	gameLogger := game.CreateGameDebugLogger(lobby.GetID()).With().
-		Str("player", game.EnumNamesMoveChoice[game.MoveChoice(lobby.GetCreatorMark())]).Logger()
+	s.logger.Debug().Uint16("rows", rows).
+		Uint16("cols", cols).
+		Uint16("win", win).
+		Str("mark", transport.MarkType_name[int32(params.Params.Mark)]).
+		Msg("Request of creating game lobby")
+
+	gameConfig := gLobby.GameConfiguration{
+		Settings: game.GameSettings{
+			Rows: rows,
+			Cols: cols,
+			Win:  win,
+		},
+		Mark: enumPlayerMark[params.Params.Mark],
+	}
+
+	lobby, err = s.lobbiesController.CreateLobby(gameConfig)
+	if err != nil {
+		s.logger.Error().Err(err).Msg("got error")
+		statusError := status.Error(codes.OutOfRange, err.Error())
+		return statusError
+	}
+
+	lobby.CreatorReadyChan() <- true
+
+	gameId := transport.CreateResponse{
+		Payload: &transport.CreateResponse_GameId{
+			GameId: lobby.ID,
+		},
+		Move: nil,
+	}
+
+	if err = stream.Send(&gameId); err != nil {
+		lobby.CreatorReadyChan() <- false
+		s.logger.Debug().Err(err)
+		return err
+	}
+
+	gameLogger := game.CreateGameDebugLogger(lobby.ID).With().
+		Str("player", game.EnumNamesMoveChoice[game.MoveChoice(lobby.CreatorMark())]).Logger()
 
 	gameLogger.Debug().Msg("initialized")
 
-	var Chans *base.CommChannels
+	var Chans *gLobby.CommChannels
 	select {
 	case gs := <-lobby.GameStartedChan():
 		if gs {
-			Chans = lobby.GetGameController().GetCreatorChannels()
-			createEvent(b, transport.GameEventTypeGameStarted)
-			CrWrapResponse(b, transport.CreatorRespMsgGameEvent, transport.GameEventEnd(b))
+			Chans = lobby.GetGameController().CreatorChannels()
+			started := transport.CreateResponse{
+				Payload: &transport.CreateResponse_Status{Status: transport.GameStatus_GAME_STATUS_GAME_STARTED},
+				Move:    nil,
+			}
 
-			if err := stream.Send(b); err != nil {
+			if err := stream.Send(&started); err != nil {
 				gameLogger.Error().Err(err).Msg("disconnected after creation")
 				Chans.Err = err
 				close(Chans.Done)
@@ -178,92 +187,76 @@ func (s *GameService) CreateGame(stream transport.GameConfigurator_CreateGameSer
 	}
 	gameLogger.Debug().Msg("started")
 
-	var interruptCause base.InterruptionCause
 	for {
 		select {
 		case action := <-Chans.Actions:
+			var resp = &transport.CreateResponse{}
 			switch a := action.(type) {
-			case base.Step:
-				CrWrapResponse(b, transport.CreatorRespMsgMove, CreateMove(b, a.Pos.I, a.Pos.J))
-				err = stream.Send(b)
-				Chans.Reactions <- base.Status{Err: err}
+			case gLobby.Step:
+				if a.Pos != nil {
+					resp.Move = moveToTransport(a.Pos)
+				}
+				switch a.State.StateType {
+				case game.Won:
+					var start *transport.Move = nil
+					var end *transport.Move = nil
+					if a.State.WinLine != nil {
+						start = moveToTransport(a.State.WinLine.Start)
+						end = moveToTransport(a.State.WinLine.End)
+					}
+					resp.Payload = &transport.CreateResponse_WinLine{WinLine: &transport.WinLine{
+						Mark:  enumMarkType[a.State.WinLine.Mark],
+						Start: start,
+						End:   end,
+					}}
+				case game.Tie:
+					resp.Payload = &transport.CreateResponse_Status{Status: transport.GameStatus_GAME_STATUS_TIE}
+				case game.Running:
+					resp.Payload = &transport.CreateResponse_Status{Status: transport.GameStatus_GAME_STATUS_OK}
+				}
+
+				err = stream.Send(resp)
+				Chans.Reactions <- gLobby.Status{Err: err}
 				if err != nil {
 					gameLogger.Debug().Dict("move", zerolog.Dict().
-						Int16("i", a.Pos.I).
-						Int16("j", a.Pos.J),
+						Uint16("i", a.Pos.I).
+						Uint16("j", a.Pos.J),
 					).Err(err).Msg("can not send move")
 					return err
 				}
-			case base.State:
-				switch a.State.StateType {
-				case game.Won:
-					startLine := CreateMove(b, a.State.WinLine.Start.I, a.State.WinLine.Start.J)
-					endLine := CreateMove(b, a.State.WinLine.End.I, a.State.WinLine.End.J)
-
-					transport.WinLineStart(b)
-					transport.WinLineAddMark(b, transport.MarkType(a.State.WinLine.Mark))
-					transport.WinLineAddStart(b, startLine)
-					transport.WinLineAddEnd(b, endLine)
-					winLine := transport.WinLineEnd(b)
-
-					createEvent(b, transport.GameEventTypeWin)
-					transport.GameEventAddFollowUp(b, winLine)
-				case game.Tie:
-					createEvent(b, transport.GameEventTypeTie)
-				case game.Running:
-					createEvent(b, transport.GameEventTypeOK)
-				}
-				CrWrapResponse(b, transport.CreatorRespMsgGameEvent, transport.GameEventEnd(b))
-
-				err = stream.Send(b)
-				Chans.Reactions <- base.Status{Err: err}
-				if err != nil {
-					gameLogger.Err(err).Msg("can not send state")
-					return err
-				}
-
 				if a.State.StateType != game.Running {
 					gameLogger.Info().Msg("ended")
-					return nil
 				}
-			case base.Interruption:
-				interruptCause = a.Cause
-				goto InterruptionEvent
-			case base.ReceiveStep:
-				respChan := make(chan base.ReceivedStep)
+			case gLobby.Interruption:
+				return interrupt(gameLogger, a.Cause)
+			case gLobby.ReceiveMove:
 				go func() {
 					in, err = stream.Recv()
 					if err != nil {
 						gameLogger.Error().Err(err).Msg("can not receive move")
-						respChan <- base.ReceivedStep{Err: err}
+						Chans.Reactions <- gLobby.ReceivedMove{Err: err}
 						return
 					}
-					req = &flatbuffers.Table{}
-					if in.Req(req) {
-						switch in.ReqType() {
-						case transport.CreatorReqMsgMove:
-							move := &transport.Move{}
-							move.Init(req.Bytes, req.Pos)
-							respChan <- base.ReceivedStep{Pos: game.Move{I: move.Row(), J: move.Col()}, Err: nil}
-						default:
-							err = status.Error(codes.InvalidArgument, "invalid type, expected move type")
-							gameLogger.Error().Err(err).Msg("wrong type")
-							respChan <- base.ReceivedStep{Err: err}
+
+					switch payload := in.Payload.(type) {
+					case *transport.CreateRequest_Move:
+						Chans.Reactions <- gLobby.ReceivedMove{Pos: &game.Move{
+							I: uint16(payload.Move.Row), J: uint16(payload.Move.Col),
+						}}
+					case *transport.CreateRequest_Action:
+						var cause gLobby.InterruptionCause
+						switch payload.Action {
+						case transport.ClientAction_CLIENT_ACTION_GIVE_UP:
+							cause = gLobby.GiveUp
+						case transport.ClientAction_CLIENT_ACTION_LEAVE:
+							cause = gLobby.Leave
 						}
+						Chans.Reactions <- gLobby.Interruption{Cause: cause}
+						return
+					default:
+						err = status.Error(codes.InvalidArgument, "unexpected type")
 					}
 				}()
-				select {
-				case action = <-Chans.Actions:
-					interruption, ok := action.(base.Interruption)
-					if !ok {
-						gameLogger.Error().Msg("got something else instead of interruption")
-						return status.Error(codes.Internal, "")
-					}
-					interruptCause = interruption.Cause
-					goto InterruptionEvent
-				case resp := <-respChan:
-					Chans.Reactions <- resp
-				}
 			}
 		case <-stream.Context().Done():
 			ctxErr := status.FromContextError(stream.Context().Err()).Err()
@@ -273,80 +266,50 @@ func (s *GameService) CreateGame(stream transport.GameConfigurator_CreateGameSer
 			return stream.Context().Err()
 		}
 	}
-InterruptionEvent:
-	var msg string
-	var cause *InterruptionInfo
-	switch interruptCause {
-	case base.OppInvalidMove:
-		msg = "invalid move from opponent"
-		cause = &InterruptionInfo{Cause: InterruptionCause_OPP_INVALID_MOVE}
-	case base.InvalidMove:
-		msg = "invalid move"
-		cause = &InterruptionInfo{Cause: InterruptionCause_INVALID_MOVE}
-	case base.Disconnect:
-		msg = "opponent disconnected"
-		cause = &InterruptionInfo{Cause: InterruptionCause_DISCONNECT}
-	case base.Leave:
-		msg = "opponent leave the game"
-		cause = &InterruptionInfo{Cause: InterruptionCause_LEAVE}
-	}
-	gameLogger.With().Str("cause", msg).Logger()
-	gameLogger.Info().Msg("interrupted")
-	code := status.New(codes.Unknown, msg)
-	st, err := code.WithDetails(cause)
-	if err != nil {
-		gameLogger.Error().Err(err).Msg("can not attach details")
-		return status.Error(codes.Internal, "")
-	}
-	return st.Err()
 }
 
 func (s *GameService) JoinGame(stream transport.GameConfigurator_JoinGameServer) error {
-	var Chans *base.CommChannels
+	var Chans *gLobby.CommChannels
 
 	in, err := stream.Recv()
-	if err == io.EOF {
-		return nil
-	}
 	if err != nil {
+		if err == io.EOF {
+			return nil
+		}
 		return err
 	}
 
-	var lobby base.GameLobby
+	var lobby *gLobby.GameLobby
 
-	b := flatbuffers.NewBuilder(0)
-	req := &flatbuffers.Table{}
-	gameID := &transport.GameId{}
-
-	if in.Req(req) {
-		if in.ReqType() == transport.OpponentReqMsgGameId {
-			gameID.Init(req.Bytes, req.Pos)
-			s.logger.Debug().Int16("game", gameID.ID()).Msg("opponent request to join")
-
-			lobby, err = s.lobbiesController.JoinLobby(gameID.ID())
-			if err != nil {
-				statusErr := status.Error(codes.InvalidArgument, err.Error())
-				s.logger.Error().Err(err).Msg("not found")
-				return statusErr
-			}
-		} else {
-			err = status.Error(codes.InvalidArgument, "Expected to get GameID")
-			s.logger.Debug().Err(err).Msg("wrong type")
-			return err
-		}
+	id, ok := in.Payload.(*transport.JoinRequest_GameId)
+	if !ok {
+		err = status.Error(codes.InvalidArgument, "Expected to get GameID")
+		s.logger.Error().Err(err).Msg("wrong type")
+		return err
 	}
 
-	gameLogger := game.CreateGameDebugLogger(lobby.GetID()).With().Str("player", game.EnumNamesMoveChoice[game.MoveChoice(lobby.GetOpponentMark())]).Logger()
+	s.logger.Debug().Uint32("game", id.GameId).Msg("opponent request to join")
+	lobby, err = s.lobbiesController.JoinLobby(id.GameId)
+	if err != nil {
+		statusErr := status.Error(codes.NotFound, err.Error())
+		s.logger.Info().Err(err).Msg("not found")
+		return statusErr
+	}
+
+	gameLogger := game.CreateGameDebugLogger(lobby.ID).With().Str("player", game.EnumNamesMoveChoice[game.MoveChoice(lobby.OpponentMark())]).Logger()
 	lobby.OpponentReadyChan() <- true
 
 	if <-lobby.GameStartedChan() {
-		createEvent(b, transport.GameEventTypeGameStarted)
-		OppWrapResponse(b, transport.OpponentRespMsgGameEvent, transport.GameEventEnd(b))
+		started := transport.JoinResponse{
+			Payload: &transport.JoinResponse_Status{Status: transport.GameStatus_GAME_STATUS_GAME_STARTED},
+			Move:    nil,
+		}
 
-		if err = stream.Send(b); err != nil {
+		if err := stream.Send(&started); err != nil {
+			gameLogger.Error().Err(err).Msg("disconnected after creation")
 			Chans.Err = err
 			close(Chans.Done)
-			s.logger.Err(err).Int16("game", lobby.GetID()).Msg("can not send game start event")
+			s.logger.Err(err).Uint32("game", lobby.ID).Msg("can not send game start event")
 			return err
 		}
 		gameLogger.Debug().Msg("event started have sent")
@@ -355,95 +318,71 @@ func (s *GameService) JoinGame(stream transport.GameConfigurator_JoinGameServer)
 	}
 
 	gameLogger.Debug().Msg("started")
+	Chans = lobby.GetGameController().OpponentChannels()
 
-	Chans = lobby.GetGameController().GetOpponentChannels()
-
-	var interruptCause base.InterruptionCause
 	for {
 		select {
 		case action := <-Chans.Actions:
+			var resp = &transport.JoinResponse{}
 			switch a := action.(type) {
-			case base.Step:
-				OppWrapResponse(b, transport.OpponentRespMsgMove, CreateMove(b, a.Pos.I, a.Pos.J))
-				err = stream.Send(b)
-				Chans.Reactions <- base.Status{Err: err}
+			case gLobby.Step:
+				resp.Move = moveToTransport(a.Pos)
+				switch a.State.StateType {
+				case game.Won:
+					resp.Payload = &transport.JoinResponse_WinLine{WinLine: &transport.WinLine{
+						Mark:  enumMarkType[a.State.WinLine.Mark],
+						Start: moveToTransport(a.State.WinLine.Start),
+						End:   moveToTransport(a.State.WinLine.End),
+					}}
+				case game.Tie:
+					resp.Payload = &transport.JoinResponse_Status{Status: transport.GameStatus_GAME_STATUS_TIE}
+				case game.Running:
+					resp.Payload = &transport.JoinResponse_Status{Status: transport.GameStatus_GAME_STATUS_OK}
+				}
+
+				err = stream.Send(resp)
+				Chans.Reactions <- gLobby.Status{Err: err}
 				if err != nil {
 					gameLogger.Debug().Dict("move", zerolog.Dict().
-						Int16("i", a.Pos.I).
-						Int16("j", a.Pos.J),
+						Uint16("i", a.Pos.I).
+						Uint16("j", a.Pos.J),
 					).Err(err).Msg("can not send move")
 					return err
 				}
-			case base.State:
-				switch a.State.StateType {
-				case game.Won:
-					startLine := CreateMove(b, a.State.WinLine.Start.I, a.State.WinLine.Start.J)
-					endLine := CreateMove(b, a.State.WinLine.End.I, a.State.WinLine.End.J)
-
-					transport.WinLineStart(b)
-					transport.WinLineAddMark(b, transport.MarkType(a.State.WinLine.Mark))
-					transport.WinLineAddStart(b, startLine)
-					transport.WinLineAddEnd(b, endLine)
-					winLine := transport.WinLineEnd(b)
-
-					createEvent(b, transport.GameEventTypeWin)
-					transport.GameEventAddFollowUp(b, winLine)
-				case game.Tie:
-					createEvent(b, transport.GameEventTypeTie)
-				case game.Running:
-					createEvent(b, transport.GameEventTypeOK)
-				}
-				OppWrapResponse(b, transport.OpponentRespMsgGameEvent, transport.GameEventEnd(b))
-
-				err = stream.Send(b)
-				Chans.Reactions <- base.Status{Err: err}
-				if err != nil {
-					gameLogger.Err(err).Msg("can not send state")
-					return err
-				}
-
 				if a.State.StateType != game.Running {
 					gameLogger.Info().Msg("ended")
-					return nil
+					//return nil
 				}
-			case base.Interruption:
-				interruptCause = a.Cause
-				goto InterruptionEvent
-			case base.ReceiveStep:
-				respChan := make(chan base.ReceivedStep)
+			case gLobby.Interruption:
+				return interrupt(gameLogger, a.Cause)
+			case gLobby.ReceiveMove:
 				go func() {
 					in, err = stream.Recv()
 					if err != nil {
 						gameLogger.Error().Err(err).Msg("can not receive move")
-						respChan <- base.ReceivedStep{Err: err}
+						Chans.Reactions <- gLobby.ReceivedMove{Err: err}
 						return
 					}
-					req = &flatbuffers.Table{}
-					if in.Req(req) {
-						switch in.ReqType() {
-						case transport.OpponentReqMsgMove:
-							move := &transport.Move{}
-							move.Init(req.Bytes, req.Pos)
-							respChan <- base.ReceivedStep{Pos: game.Move{I: move.Row(), J: move.Col()}, Err: nil}
-						default:
-							err = status.Error(codes.InvalidArgument, "invalid type, expected move type")
-							gameLogger.Error().Err(err).Msg("wrong type")
-							respChan <- base.ReceivedStep{Err: err}
+
+					switch payload := in.Payload.(type) {
+					case *transport.JoinRequest_Move:
+						Chans.Reactions <- gLobby.ReceivedMove{Pos: &game.Move{
+							I: uint16(payload.Move.Row), J: uint16(payload.Move.Col),
+						}}
+					case *transport.JoinRequest_Action:
+						var cause gLobby.InterruptionCause
+						switch payload.Action {
+						case transport.ClientAction_CLIENT_ACTION_GIVE_UP:
+							cause = gLobby.GiveUp
+						case transport.ClientAction_CLIENT_ACTION_LEAVE:
+							cause = gLobby.Leave
 						}
+						Chans.Reactions <- gLobby.Interruption{Cause: cause}
+						return
+					default:
+						err = status.Error(codes.InvalidArgument, "unexpected type")
 					}
 				}()
-				select {
-				case action = <-Chans.Actions:
-					interruption, ok := action.(base.Interruption)
-					if !ok {
-						gameLogger.Error().Msg("got something else instead of interruption")
-						return status.Error(codes.Internal, "")
-					}
-					interruptCause = interruption.Cause
-					goto InterruptionEvent
-				case resp := <-respChan:
-					Chans.Reactions <- resp
-				}
 			}
 		case <-stream.Context().Done():
 			ctxErr := status.FromContextError(stream.Context().Err()).Err()
@@ -453,58 +392,51 @@ func (s *GameService) JoinGame(stream transport.GameConfigurator_JoinGameServer)
 			return stream.Context().Err()
 		}
 	}
-InterruptionEvent:
+}
+
+func moveToTransport(move *game.Move) *transport.Move {
+	if move == nil {
+		return nil
+	}
+	return &transport.Move{
+		Row: uint32(move.I),
+		Col: uint32(move.J),
+	}
+}
+
+func interruptionToStatus(interruptCause gLobby.InterruptionCause) (*status.Status, error) {
 	var msg string
-	var cause *InterruptionInfo
+	var cause transport.StopCause
 	switch interruptCause {
-	case base.OppInvalidMove:
-		msg = "invalid move from opponent"
-		cause = &InterruptionInfo{Cause: InterruptionCause_OPP_INVALID_MOVE}
-	case base.InvalidMove:
+	case gLobby.Internal:
+		msg = "unknown error"
+		cause = transport.StopCause_STOP_CAUSE_INTERNAL
+	case gLobby.InvalidMove:
 		msg = "invalid move"
-		cause = &InterruptionInfo{Cause: InterruptionCause_INVALID_MOVE}
-	case base.Disconnect:
+		cause = transport.StopCause_STOP_CAUSE_INVALID_MOVE
+	case gLobby.Disconnect:
+		cause = transport.StopCause_STOP_CAUSE_DISCONNECT
 		msg = "opponent disconnected"
-		cause = &InterruptionInfo{Cause: InterruptionCause_DISCONNECT}
-	case base.Leave:
+	case gLobby.Leave:
 		msg = "opponent leave the game"
-		cause = &InterruptionInfo{Cause: InterruptionCause_LEAVE}
+		cause = transport.StopCause_STOP_CAUSE_LEAVE
 	}
 
-	interruptLogger := gameLogger.With().Str("cause", msg).Logger()
-	(&interruptLogger).Info().Msg("interrupted")
-
-	code := status.New(codes.Unknown, msg)
-	st, err := code.WithDetails(cause)
+	st := status.New(codes.Internal, msg)
+	detSt, err := st.WithDetails(&transport.Interruption{Cause: cause})
 	if err != nil {
-		gameLogger.Error().Err(err).Msg("can not attach details")
-		return status.Error(codes.Internal, "")
+		m := "can not attach details"
+		return nil, status.Error(codes.Internal, m)
 	}
+	return detSt, nil
+}
+
+func interrupt(gameLogger zerolog.Logger, interruptCause gLobby.InterruptionCause) error {
+	st, err := interruptionToStatus(interruptCause)
+	if err != nil {
+		gameLogger.Error().Err(err).Msg("can not process interruption")
+	}
+	interruptLogger := gameLogger.With().Str("cause", st.Message()).Logger()
+	(&interruptLogger).Info().Msg("interrupted")
 	return st.Err()
-}
-
-func createEvent(b *flatbuffers.Builder, eventType transport.GameEventType) {
-	transport.GameEventStart(b)
-	transport.GameEventAddType(b, eventType)
-}
-
-func CreateMove(b *flatbuffers.Builder, i int16, j int16) flatbuffers.UOffsetT {
-	transport.MoveStart(b)
-	transport.MoveAddRow(b, i)
-	transport.MoveAddCol(b, j)
-	return transport.MoveEnd(b)
-}
-
-func CrWrapResponse(b *flatbuffers.Builder, respType transport.CreatorRespMsg, resp flatbuffers.UOffsetT) {
-	transport.CrResponseStart(b)
-	transport.CrResponseAddRespType(b, respType)
-	transport.CrResponseAddResp(b, resp)
-	b.Finish(transport.CrResponseEnd(b))
-}
-
-func OppWrapResponse(b *flatbuffers.Builder, respType transport.OpponentRespMsg, resp flatbuffers.UOffsetT) {
-	transport.OppResponseStart(b)
-	transport.OppResponseAddRespType(b, respType)
-	transport.OppResponseAddResp(b, resp)
-	b.Finish(transport.OppResponseEnd(b))
 }

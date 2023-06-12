@@ -2,24 +2,20 @@ package game
 
 import (
 	"fmt"
-	"github.com/izgib/tttserver/internal"
-	"github.com/izgib/tttserver/rpc_service/transport"
+	"github.com/izgib/tttserver/internal/logger"
 	"github.com/rs/zerolog"
 )
 
 type Move struct {
-	I int16
-	J int16
+	I uint16
+	J uint16
 }
 type MoveChoice int8
 
 const (
-	// Cross представляет крестик
-	Cross = MoveChoice(transport.MarkTypeFilterCross)
-	// Nought представляет нолик
-	Nought = MoveChoice(transport.MarkTypeFilterNought)
-	// Empty представляет пустое поле
-	Empty = MoveChoice(transport.MarkTypeFilterAny)
+	Cross  = MoveChoice(CrossMark)
+	Nought = MoveChoice(NoughtMark)
+	Empty  = MoveChoice(2)
 )
 
 var EnumNamesMoveChoice = map[MoveChoice]string{
@@ -52,26 +48,26 @@ type GameState struct {
 type PlayerMark int8
 
 const (
-	CrossMark  = PlayerMark(transport.MarkTypeCross)
-	NoughtMark = PlayerMark(transport.MarkTypeNought)
+	CrossMark  = PlayerMark(0)
+	NoughtMark = PlayerMark(1)
 )
 
 type WinLine struct {
 	Mark  PlayerMark
-	Start Move
-	End   Move
+	Start *Move
+	End   *Move
 }
 
 type iterationPair struct {
 	start  Move
 	iStep  int16
 	jStep  int16
-	length int16
+	length uint16
 }
 
 var GameRules = map[GameParameter]struct {
-	Start int16
-	End   int16
+	Start uint16
+	End   uint16
 }{
 	Rows: {3, 15},
 	Cols: {3, 15},
@@ -79,14 +75,14 @@ var GameRules = map[GameParameter]struct {
 }
 
 type GameSettings struct {
-	Rows int16
-	Cols int16
-	Win  int16
+	Rows uint16
+	Cols uint16
+	Win  uint16
 }
 
 type Game struct {
 	settings  GameSettings
-	turn      int16
+	turn      uint16
 	gameField [][]MoveChoice
 }
 
@@ -94,7 +90,7 @@ func NewGame(settings GameSettings) *Game {
 	sl := make([][]MoveChoice, settings.Rows)
 	for i := range sl {
 		sl[i] = make([]MoveChoice, settings.Cols)
-		for j := int16(0); j < settings.Cols; j++ {
+		for j := uint16(0); j < uint16(settings.Cols); j++ {
 			sl[i][j] = Empty
 		}
 	}
@@ -107,7 +103,7 @@ func NewGame(settings GameSettings) *Game {
 
 // GameState checks game state, if state is running, going to next turn
 func (g *Game) GameState(move Move) GameState {
-	winLine := g.isWon(MoveChoice(g.getPlayerMark(g.CurPlayer())), move.I, move.J)
+	winLine := g.isWon(MoveChoice(g.GetPlayerMark(g.CurPlayer())), move.I, move.J)
 	if winLine != nil {
 		return GameState{StateType: Won, WinLine: winLine}
 	}
@@ -116,18 +112,30 @@ func (g *Game) GameState(move Move) GameState {
 	}
 	g.turn++
 	return GameState{StateType: Running, WinLine: nil}
-
 }
 
-func (g *Game) CurPlayer() int16 {
+func (g *Game) Settings() GameSettings {
+	return g.settings
+}
+
+func (g *Game) Restart() {
+	g.turn = 0
+	for i := uint16(0); i < g.settings.Rows; i++ {
+		for j := uint16(0); j < g.settings.Cols; j++ {
+			g.gameField[i][j] = Empty
+		}
+	}
+}
+
+func (g *Game) CurPlayer() uint16 {
 	return g.turn & 1
 }
 
-func (g *Game) OtherPlayer() int16 {
+func (g *Game) OtherPlayer() uint16 {
 	return (g.turn + 1) & 1
 }
 
-func min(a int16, b int16) int16 {
+func min(a uint16, b uint16) uint16 {
 	if a > b {
 		return b
 	}
@@ -135,18 +143,18 @@ func min(a int16, b int16) int16 {
 }
 
 func (g *Game) lineIterator(start Move, iStep int16, jStep int16) func() Move {
-	i := start.I
-	j := start.J
+	i := int16(start.I)
+	j := int16(start.J)
 	return func() Move {
 		defer func() {
 			i += iStep
 			j += jStep
 		}()
-		return Move{i, j}
+		return Move{uint16(i), uint16(j)}
 	}
 }
 
-func (g *Game) isWon(mark MoveChoice, i int16, j int16) *WinLine {
+func (g *Game) isWon(mark MoveChoice, i uint16, j uint16) *WinLine {
 	var markType PlayerMark
 	if mark == Cross {
 		markType = CrossMark
@@ -177,10 +185,10 @@ func (g *Game) isWon(mark MoveChoice, i int16, j int16) *WinLine {
 
 	for _, iterParams := range lines {
 		var lineStart *Move = nil
-		length := int16(0)
+		length := uint16(0)
 		if iterParams.length >= g.settings.Win {
 			iterator := g.lineIterator(iterParams.start, iterParams.iStep, iterParams.jStep)
-			for k := int16(0); k < iterParams.length; k++ {
+			for k := uint16(0); k < iterParams.length; k++ {
 				coord := iterator()
 				if g.gameField[coord.I][coord.J] == mark {
 					if lineStart == nil {
@@ -188,7 +196,7 @@ func (g *Game) isWon(mark MoveChoice, i int16, j int16) *WinLine {
 					}
 					length++
 					if length >= g.settings.Win {
-						return &WinLine{Mark: markType, Start: *lineStart, End: coord}
+						return &WinLine{Mark: markType, Start: lineStart, End: &coord}
 					}
 				} else {
 					lineStart = nil
@@ -201,13 +209,13 @@ func (g *Game) isWon(mark MoveChoice, i int16, j int16) *WinLine {
 	return nil
 }
 
-func (g *Game) getPlayerMark(player int16) PlayerMark {
+func (g *Game) GetPlayerMark(player uint16) PlayerMark {
 	return plMark[player]
 }
 
 // MoveTo place mark on the field, if cell is not empty return error
 func (g *Game) MoveTo(move Move) error {
-	mark := g.getPlayerMark(g.CurPlayer())
+	mark := g.GetPlayerMark(g.CurPlayer())
 
 	var err error = nil
 	if (0 <= move.I && move.I < g.settings.Rows) && (0 <= move.J && move.J < g.settings.Cols) {
@@ -222,8 +230,8 @@ func (g *Game) MoveTo(move Move) error {
 	return err
 }
 
-func CreateGameDebugLogger(ID int16) *zerolog.Logger {
-	logger := internal.CreateDebugLogger().With().Int16("game", ID).Timestamp().Logger()
+func CreateGameDebugLogger(ID uint32) *zerolog.Logger {
+	logger := logger.CreateDebugLogger().With().Uint32("game", ID).Timestamp().Logger()
 	return &logger
 }
 
@@ -237,11 +245,11 @@ func (e *TakenGameError) Error() string {
 
 type OutsideGameError struct {
 	Move Move
-	rows int16
-	cols int16
+	rows uint16
+	cols uint16
 }
 
-func NewOutOfFieldError(move Move, rows int16, cols int16) error {
+func NewOutOfFieldError(move Move, rows uint16, cols uint16) error {
 	return &OutsideGameError{move, rows, cols}
 }
 
