@@ -113,9 +113,9 @@ func Test_GameLobbyController_JoinLobby(t *testing.T) {
 		}
 		assert.NoError(t, err)
 	})
-	var randomID = rand.Uint32()
+	var randomID = rand.Int63()
 	for randomID == testLobby.ID {
-		randomID = rand.Uint32()
+		randomID = rand.Int63()
 	}
 
 	t.Run("error: not found", func(t *testing.T) {

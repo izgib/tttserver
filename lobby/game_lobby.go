@@ -6,7 +6,7 @@ import (
 )
 
 type GameLobby struct {
-	ID             uint32
+	ID             int64
 	settings       game.GameSettings
 	creatorMark    game.PlayerMark
 	crReady        chan bool
@@ -37,7 +37,7 @@ func (g GameLobby) GetGameController() GameController {
 	return *g.gameController
 }
 
-func NewGameLobby(ID uint32, settings game.GameSettings, creatorMark game.PlayerMark, recorder GameRecorder) GameLobby {
+func NewGameLobby(ID int64, settings game.GameSettings, creatorMark game.PlayerMark, recorder GameRecorder) GameLobby {
 	return GameLobby{ID: ID, settings: settings, creatorMark: creatorMark, crReady: make(chan bool), recorder: recorder,
 		oppReady: make(chan bool), startedChan: 0, startedChans: [2]chan bool{make(chan bool), make(chan bool)},
 	}

@@ -62,10 +62,10 @@ var EnumValuesGameStatus = map[lobby.GameEndStatus]gameStatus{
 
 type gameRecorder struct {
 	db     *sqlx.DB
-	gameId uint32
+	gameId int64
 }
 
-func (r *gameRecorder) ID() uint32 {
+func (r *gameRecorder) ID() int64 {
 	return r.gameId
 }
 
@@ -86,7 +86,7 @@ func NewGameRecorder(config lobby.GameConfiguration) lobby.GameRecorder {
 		host, dbname, user, password)
 	db := sqlx.MustConnect("pgx", psqlInfo)
 	gq := `INSERT INTO game_session (rows, cols, win, creator_mark) VALUES ($1, $2, $3, $4) RETURNING game_id`
-	var gameID uint32
+	var gameID int64
 	err := db.QueryRowx(gq, config.Settings.Rows, config.Settings.Cols, config.Settings.Win, EnumValuesPlayerMark[config.Mark]).Scan(&gameID)
 	if err != nil {
 		logger.CreateDebugLogger().Err(err).Msg("can not create db entity")

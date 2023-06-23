@@ -5,7 +5,7 @@ import (
 )
 
 type GameConfiguration struct {
-	ID       uint32
+	ID       int64
 	Settings game.GameSettings
 	Mark     game.PlayerMark
 }

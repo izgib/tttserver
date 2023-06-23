@@ -13,12 +13,12 @@ import (
 type GameLobbyController struct {
 	mu            sync.Locker
 	recordCreator func(config GameConfiguration) GameRecorder
-	lobbies       map[uint32]*GameLobby
+	lobbies       map[int64]*GameLobby
 	logger        *zerolog.Logger
 }
 
 func NewGameLobbyController(recordCreator func(config GameConfiguration) GameRecorder, logger *zerolog.Logger) GameLobbyController {
-	return GameLobbyController{recordCreator: recordCreator, logger: logger, lobbies: make(map[uint32]*GameLobby), mu: &sync.Mutex{}}
+	return GameLobbyController{recordCreator: recordCreator, logger: logger, lobbies: make(map[int64]*GameLobby), mu: &sync.Mutex{}}
 }
 
 func (g *GameLobbyController) CreateLobby(config GameConfiguration) (*GameLobby, error) {
@@ -96,7 +96,7 @@ func (g *GameLobbyController) CreateLobby(config GameConfiguration) (*GameLobby,
 	g.mu.Unlock()
 
 	go func() {
-		logger := g.logger.With().Uint32("session", lobby.ID).Logger()
+		logger := g.logger.With().Int64("session", lobby.ID).Logger()
 		logger.Debug().Msg("before start")
 		if err := lobby.Start(&logger); err != nil {
 			(&logger).Info().Int("player games", lobby.gameController.gameCount).Err(err).Msg("ended")
@@ -170,7 +170,7 @@ func (g *GameLobbyController) ListLobbies(filter GameFilter) ([]GameConfiguratio
 			(cols.Start <= v.Settings().Cols && v.Settings().Cols <= cols.End) &&
 			(win.Start <= v.Settings().Win && v.Settings().Win <= win.End) {
 			if mark == game.Empty || mark == game.MoveChoice(v.CreatorMark()) {
-				g.logger.Debug().Uint32("game lobby", v.ID)
+				g.logger.Debug().Int64("game lobby", v.ID)
 				games = append(games,
 					GameConfiguration{
 						ID:       v.ID,
@@ -184,8 +184,8 @@ func (g *GameLobbyController) ListLobbies(filter GameFilter) ([]GameConfiguratio
 	return games, nil
 }
 
-func (g *GameLobbyController) JoinLobby(ID uint32) (*GameLobby, error) {
-	g.logger.Debug().Uint32("game", ID).Msg("request to join lobby")
+func (g *GameLobbyController) JoinLobby(ID int64) (*GameLobby, error) {
+	g.logger.Debug().Int64("game", ID).Msg("request to join lobby")
 	if gameLobby, ok := g.lobbies[ID]; ok {
 		return gameLobby, nil
 	} else {

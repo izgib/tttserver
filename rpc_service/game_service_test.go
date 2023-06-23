@@ -29,10 +29,10 @@ import (
 const bufSize = 1024 * 16
 
 type gameLobbyID struct {
-	id uint32
+	id int64
 }
 
-func (g gameLobbyID) ID() uint32 {
+func (g gameLobbyID) ID() int64 {
 	return g.id
 }
 
@@ -802,9 +802,9 @@ func gameCreatorInit(
 ) (lobbyID lobby.GameLobbyID, err error) {
 	params := transport.CreateRequest{
 		Payload: &transport.CreateRequest_Params{Params: &transport.GameParams{
-			Rows: uint32(settings.Rows),
-			Cols: uint32(settings.Cols),
-			Win:  uint32(settings.Win),
+			Rows: int32(settings.Rows),
+			Cols: int32(settings.Cols),
+			Win:  int32(settings.Win),
 			Mark: enumMarkType[mark],
 		}},
 	}
@@ -849,7 +849,7 @@ func gameCreatorStartAwait(stream transport.GameConfigurator_CreateGameClient, l
 	return err
 }
 
-func gameOpponentInit(stream transport.GameConfigurator_JoinGameClient, ID uint32, logger zerolog.Logger) error {
+func gameOpponentInit(stream transport.GameConfigurator_JoinGameClient, ID int64, logger zerolog.Logger) error {
 	gameId := transport.JoinRequest{
 		Payload: &transport.JoinRequest_GameId{GameId: ID},
 	}
@@ -894,7 +894,7 @@ func gameCrInteractor(stream transport.GameConfigurator_CreateGameClient, params
 		if sending {
 			playerLogger.Debug().Msg("intend to send move")
 			m := transport.CreateRequest{
-				Payload: &transport.CreateRequest_Move{Move: &transport.Move{Row: uint32(move.I), Col: uint32(move.J)}},
+				Payload: &transport.CreateRequest_Move{Move: &transport.Move{Row: int32(move.I), Col: int32(move.J)}},
 			}
 			if err := stream.Send(&m); err != nil && err != io.EOF {
 				return nil, err
@@ -949,11 +949,11 @@ func gameCrInteractor(stream transport.GameConfigurator_CreateGameClient, params
 			} else {
 				playerLogger.Debug().Str("Winner", m).Dict("win line", zerolog.Dict().
 					Dict("start", zerolog.Dict().
-						Uint32("i", start.Row).
-						Uint32("j", start.Col)).
+						Int32("i", start.Row).
+						Int32("j", start.Col)).
 					Dict("end", zerolog.Dict().
-						Uint32("i", end.Row).
-						Uint32("j", end.Col)),
+						Int32("i", end.Row).
+						Int32("j", end.Col)),
 				).Msg("game ended")
 			}
 			return st.WinLine, nil
@@ -980,7 +980,7 @@ func gameOppInteractor(stream transport.GameConfigurator_JoinGameClient, params 
 		if sending {
 			playerLogger.Debug().Msg("intend to send move")
 			m := transport.JoinRequest{
-				Payload: &transport.JoinRequest_Move{Move: &transport.Move{Row: uint32(move.I), Col: uint32(move.J)}},
+				Payload: &transport.JoinRequest_Move{Move: &transport.Move{Row: int32(move.I), Col: int32(move.J)}},
 			}
 			if err := stream.Send(&m); err != nil && err != io.EOF {
 				return nil, err
@@ -1031,11 +1031,11 @@ func gameOppInteractor(stream transport.GameConfigurator_JoinGameClient, params 
 			} else {
 				playerLogger.Debug().Str("Winner", m).Dict("win line", zerolog.Dict().
 					Dict("start", zerolog.Dict().
-						Uint32("i", start.Row).
-						Uint32("j", start.Col)).
+						Int32("i", start.Row).
+						Int32("j", start.Col)).
 					Dict("end", zerolog.Dict().
-						Uint32("i", end.Row).
-						Uint32("j", end.Col)),
+						Int32("i", end.Row).
+						Int32("j", end.Col)),
 				).Msg("game ended")
 			}
 			return st.WinLine, nil

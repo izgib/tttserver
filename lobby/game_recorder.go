@@ -7,7 +7,7 @@ import (
 )
 
 type GameRecorder interface {
-	ID() uint32
+	ID() int64
 	RecordMove(move game.Move) error
 	RecordStatus(status GameEndStatus) error
 }
@@ -27,12 +27,12 @@ const (
 )
 
 type gameRecorder struct {
-	gameId uint32
+	gameId int64
 	logger zerolog.Logger
 	turn   uint16
 }
 
-func (r *gameRecorder) ID() uint32 {
+func (r *gameRecorder) ID() int64 {
 	return r.gameId
 }
 
@@ -72,10 +72,10 @@ func (r *gameRecorder) RecordMove(move game.Move) error {
 	return nil
 }
 
-var idCounter uint32 = 1
+var idCounter int64 = 1
 
 func PlainGameRecorder(config GameConfiguration) GameRecorder {
-	logger := logger2.CreateDebugLogger().With().Uint32("game", idCounter).Logger()
+	logger := logger2.CreateDebugLogger().With().Int64("game", idCounter).Logger()
 	recorder := &gameRecorder{
 		gameId: idCounter,
 		logger: logger,

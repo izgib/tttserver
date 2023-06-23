@@ -1,7 +1,7 @@
 package lobby
 
 type GameLobbyID interface {
-	ID() uint32
+	ID() int64
 }
 
 /*type GameLobby interface {

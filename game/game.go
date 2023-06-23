@@ -230,8 +230,8 @@ func (g *Game) MoveTo(move Move) error {
 	return err
 }
 
-func CreateGameDebugLogger(ID uint32) *zerolog.Logger {
-	logger := logger.CreateDebugLogger().With().Uint32("game", ID).Timestamp().Logger()
+func CreateGameDebugLogger(ID int64) *zerolog.Logger {
+	logger := logger.CreateDebugLogger().With().Int64("game", ID).Timestamp().Logger()
 	return &logger
 }
 

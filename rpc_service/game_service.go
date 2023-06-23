@@ -45,14 +45,14 @@ func (s *GameService) GetListOfGames(params *transport.GameFilter, stream transp
 
 	s.logger.Debug().Dict("filter", zerolog.Dict().
 		Dict("row", zerolog.Dict().
-			Uint32("start", rowsStart).
-			Uint32("end", rowsEnd)).
+			Int32("start", rowsStart).
+			Int32("end", rowsEnd)).
 		Dict("col", zerolog.Dict().
-			Uint32("start", colsStart).
-			Uint32("end", colsEnd)).
+			Int32("start", colsStart).
+			Int32("end", colsEnd)).
 		Dict("win", zerolog.Dict().
-										Uint32("start", winStart).
-										Uint32("end", winEnd)).
+										Int32("start", winStart).
+										Int32("end", winEnd)).
 		Str("mark", transport.MarkType_name[int32(params.Mark)]), //transport.EnumNamesMarkTypeFilter[params.Mark()]),
 	).Msg("Request List of Games")
 
@@ -70,11 +70,11 @@ func (s *GameService) GetListOfGames(params *transport.GameFilter, stream transp
 
 	i := 0
 	for _, v := range games {
-		s.logger.Debug().Uint32("game", v.ID).Msgf("%d:", i)
+		s.logger.Debug().Int64("game", v.ID).Msgf("%d:", i)
 		params := transport.GameParams{
-			Rows: uint32(v.Settings.Rows),
-			Cols: uint32(v.Settings.Cols),
-			Win:  uint32(v.Settings.Win),
+			Rows: int32(v.Settings.Rows),
+			Cols: int32(v.Settings.Cols),
+			Win:  int32(v.Settings.Win),
 			Mark: enumMarkType[v.Mark],
 		}
 
@@ -288,7 +288,7 @@ func (s *GameService) JoinGame(stream transport.GameConfigurator_JoinGameServer)
 		return err
 	}
 
-	s.logger.Debug().Uint32("game", id.GameId).Msg("opponent request to join")
+	s.logger.Debug().Int64("game", id.GameId).Msg("opponent request to join")
 	lobby, err = s.lobbiesController.JoinLobby(id.GameId)
 	if err != nil {
 		statusErr := status.Error(codes.NotFound, err.Error())
@@ -309,7 +309,7 @@ func (s *GameService) JoinGame(stream transport.GameConfigurator_JoinGameServer)
 			gameLogger.Error().Err(err).Msg("disconnected after creation")
 			Chans.Err = err
 			close(Chans.Done)
-			s.logger.Err(err).Uint32("game", lobby.ID).Msg("can not send game start event")
+			s.logger.Err(err).Int64("game", lobby.ID).Msg("can not send game start event")
 			return err
 		}
 		gameLogger.Debug().Msg("event started have sent")
@@ -399,8 +399,8 @@ func moveToTransport(move *game.Move) *transport.Move {
 		return nil
 	}
 	return &transport.Move{
-		Row: uint32(move.I),
-		Col: uint32(move.J),
+		Row: int32(move.I),
+		Col: int32(move.J),
 	}
 }
 
